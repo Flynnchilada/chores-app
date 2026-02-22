@@ -10,11 +10,11 @@ APP_NAME = 'chores-family-app'
 
 if APP_NAME not in _apps:
     try:
-        # Load secret JSON string from Streamlit secrets
+        # Load from Streamlit secrets
         service_account_str = st.secrets["firebase"]["service_account_json"]
         service_account_info = json.loads(service_account_str)
 
-        # Define cred here (this was missing or failing)
+        # Define cred HERE (this line was missing or misplaced)
         cred = credentials.Certificate(service_account_info)
 
         firebase_admin.initialize_app(cred, {
@@ -22,9 +22,8 @@ if APP_NAME not in _apps:
         }, name=APP_NAME)
 
     except Exception as e:
-        st.error("Firebase connection failed")
-        st.error(str(e))
-        st.error("Check 'firebase' → 'service_account_json' in Settings → Secrets.")
+        st.error(f"Firebase init failed: {str(e)}")
+        st.error("Check secrets: [firebase] service_account_json")
         st.stop()
 
 # Database reference
@@ -53,20 +52,16 @@ def get_data():
         }
         ref.set(default_data)
         return default_data
-    
-    # Ensure fields exist
-    for field in ["points", "streaks", "last_completed_days"]:
-        if field not in data:
-            if field in ["points", "streaks"]:
-                data[field] = {"Ruby": 0, "Sofia": 0}
-            else:
-                data[field] = {"Ruby": None, "Sofia": None}
-    
+
+    # Ensure required fields
+    data.setdefault("points", {"Ruby": 0, "Sofia": 0})
+    data.setdefault("streaks", {"Ruby": 0, "Sofia": 0})
+    data.setdefault("last_completed_days", {"Ruby": None, "Sofia": None})
     return data
 
 data = get_data()
 
-# ─── Define key variables EARLY so they are always available ─────────────────────
+# Define these early so they're always available
 assignments = data.get("last_assignments", {})
 completions = data.get("completions", {})
 
@@ -83,17 +78,12 @@ def update_streaks_and_points():
         return
 
     total_chores = sum(len(tasks) for tasks in assignments.values())
-    done_chores = sum(
-        sum(1 for v in kid_compl.values() if v)
-        for kid_compl in completions.values()
-    )
+    done_chores = sum(sum(1 for v in kid_compl.values() if v) for kid_compl in completions.values())
 
     all_done_today = total_chores > 0 and done_chores == total_chores
 
     for kid in data["kids"]:
-        kid_tasks = len(assignments.get(kid, []))
         kid_done = sum(1 for v in completions.get(kid, {}).values() if v)
-        
         points[kid] += kid_done * 10
         if all_done_today:
             points[kid] += 50
@@ -121,127 +111,110 @@ update_streaks_and_points()
 
 # ─── Reward Tiers ────────────────────────────────────────────────────────────────
 def get_reward(points):
-    if points >= 300:
-        return "Special family outing 🌟"
-    elif points >= 200:
-        return "Movie night pick 🍿"
-    elif points >= 100:
-        return "Extra screen time 30 min 🎮"
-    elif points >= 50:
-        return "Ice cream treat 🍦"
-    else:
-        return "Keep going! Next reward at 50 points"
+    if points >= 300: return "Special family outing 🌟"
+    if points >= 200: return "Movie night pick 🍿"
+    if points >= 100: return "Extra screen time 30 min 🎮"
+    if points >= 50:  return "Ice cream treat 🍦"
+    return "Keep going! Next reward at 50 points"
 
 # ─── Admin Password (CHANGE THIS!) ───────────────────────────────────────────────
-ADMIN_PASSWORD = "Harlindon26"  # ← CHANGE THIS TO SOMETHING ONLY YOU KNOW
+ADMIN_PASSWORD = "parent123"  # ← CHANGE TO SOMETHING SECURE ONLY YOU KNOW
 
-# ─── Check if user is admin ──────────────────────────────────────────────────────
+# ─── Admin Check ─────────────────────────────────────────────────────────────────
 is_admin = False
 with st.sidebar:
     st.markdown("**Parent Admin**")
-    password_input = st.text_input("Enter admin password", type="password", key="admin_pw")
-    if password_input == ADMIN_PASSWORD:
+    pw = st.text_input("Admin password", type="password", key="admin_pw")
+    if pw == ADMIN_PASSWORD:
         is_admin = True
         st.success("Admin access granted")
-    elif password_input:
+    elif pw:
         st.error("Wrong password")
 
-# ─── App UI ──────────────────────────────────────────────────────────────────────
+# ─── Main UI ─────────────────────────────────────────────────────────────────────
 st.title("Ruby & Sofia Chore Manager")
-
-today = date.today().strftime("%A, %d %B %Y")
-st.subheader(f"Today: {today}")
+st.subheader(f"Today: {date.today().strftime('%A, %d %B %Y')}")
 
 if is_admin:
     st.markdown("### Admin Dashboard (Parent Only)")
-    
+
     col1, col2 = st.columns(2)
-    
+
     with col1:
         st.subheader("Current Status")
         for kid in data["kids"]:
-            points = data["points"].get(kid, 0)
-            streak = data["streaks"].get(kid, 0)
+            pts = data["points"].get(kid, 0)
+            strk = data["streaks"].get(kid, 0)
             st.markdown(f"**{kid}**")
-            st.markdown(f"Points: **{points}**")
-            st.markdown(f"Streak: **{streak}** days 🔥")
-            st.markdown(f"Reward: {get_reward(points)}")
+            st.markdown(f"Points: **{pts}**")
+            st.markdown(f"Streak: **{strk}** days 🔥")
+            st.markdown(f"Reward: {get_reward(pts)}")
             st.markdown("---")
-    
+
     with col2:
         st.subheader("Manual Adjustments")
-        selected_kid = st.selectbox("Select kid", data["kids"], key="admin_kid_select")
-        adjustment = st.number_input("Add/subtract points", value=0, step=10, key="admin_points_adjust")
-        
-        if st.button("Apply Points Change", key="apply_points_btn"):
-            if adjustment != 0:
-                current_points = data["points"].get(selected_kid, 0)
-                new_points = current_points + adjustment
-                data["points"][selected_kid] = new_points
-                ref.set(data)  # Save immediately
-                st.success(f"Applied {adjustment} points → {selected_kid} now has **{new_points}** points")
+        kid = st.selectbox("Select kid", data["kids"], key="adj_kid")
+        adj = st.number_input("Points ±", value=0, step=10, key="adj_val")
+
+        if st.button("Apply Points Change", key="btn_apply"):
+            if adj != 0:
+                data["points"][kid] = data["points"].get(kid, 0) + adj
+                ref.set(data)
+                st.success(f"{adj:+} points → {kid} now has {data['points'][kid]}")
                 st.rerun()
-            else:
-                st.info("No change (adjustment = 0)")
-        
-        if st.button("Reset All Streaks & Points", key="reset_all_btn"):
-            if st.checkbox("Confirm reset (cannot be undone)", key="confirm_reset"):
+
+        if st.button("Reset All Streaks & Points", key="btn_reset"):
+            if st.checkbox("Confirm reset", key="chk_reset"):
                 data["streaks"] = {"Ruby": 0, "Sofia": 0}
                 data["points"] = {"Ruby": 0, "Sofia": 0}
                 data["last_completed_days"] = {"Ruby": None, "Sofia": None}
                 ref.set(data)
-                st.success("All streaks and points reset")
+                st.success("Reset complete")
                 st.rerun()
 
-    # Manage Chores List
-    st.subheader("Manage Chores List")
-    current_chores = data.get("chores", [])
-    
-    new_chore = st.text_input("Add new chore", key="new_chore_input")
-    if st.button("Add Chore", key="add_chore_btn") and new_chore.strip():
-        cleaned_chore = new_chore.strip()
-        if cleaned_chore not in current_chores:
-            current_chores.append(cleaned_chore)
-            data["chores"] = current_chores
+    st.subheader("Manage Chores")
+    chores = data.get("chores", [])
+
+    new_chore = st.text_input("New chore", key="new_chore")
+    if st.button("Add Chore", key="btn_add_chore") and new_chore.strip():
+        c = new_chore.strip()
+        if c not in chores:
+            chores.append(c)
+            data["chores"] = chores
             ref.set(data)
-            st.success(f"Added: **{cleaned_chore}**")
+            st.success(f"Added: {c}")
             st.rerun()
-        else:
-            st.warning("Chore already exists")
 
     st.write("Current chores:")
-    for chore in current_chores:
-        col_chore, col_del = st.columns([5, 1])
-        col_chore.write(chore)
-        if col_del.button("Remove", key=f"del_chore_{chore}"):
-            current_chores.remove(chore)
-            data["chores"] = current_chores
+    for c in chores:
+        cols = st.columns([5, 1])
+        cols[0].write(c)
+        if cols[1].button("Remove", key=f"rm_{c}"):
+            chores.remove(c)
+            data["chores"] = chores
             ref.set(data)
             st.rerun()
 
 else:
-    # Normal kid view
+    # Kid view
     if st.button("Generate New Assignments", type="primary"):
         chores_copy = data["chores"][:]
         random.shuffle(chores_copy)
 
-        assignments = {kid: [] for kid in data["kids"]}
+        ass = {k: [] for k in data["kids"]}
         for i, chore in enumerate(chores_copy):
-            kid = data["kids"][i % len(data["kids"])]
-            assignments[kid].append(chore)
+            ass[data["kids"][i % len(data["kids"])]].append(chore)
 
-        completions = {
-            kid: {chore: False for chore in tasks}
-            for kid, tasks in assignments.items()
-        }
+        comp = {k: {ch: False for ch in tsk} for k, tsk in ass.items()}
 
-        data["last_date"] = today
-        data["last_assignments"] = assignments
-        data["completions"] = completions
-        data["last_completed_days"] = {kid: None for kid in data["kids"]}
-
+        data.update({
+            "last_date": today,
+            "last_assignments": ass,
+            "completions": comp,
+            "last_completed_days": {k: None for k in data["kids"]}
+        })
         ref.set(data)
-        st.success("New assignments created and synced!")
+        st.success("New assignments created!")
         st.rerun()
 
     st.markdown("### Today's Chores")
@@ -253,75 +226,55 @@ else:
         tasks = assignments.get(kid, [])
 
         if not tasks:
-            st.info("No chores today – nice break!")
+            st.info("No chores today – enjoy!")
             continue
 
         for chore in sorted(tasks):
             key = f"{kid}_{chore.replace(' ', '_').replace("'", '')}"
-            current_done = completions.get(kid, {}).get(chore, False)
+            cur = completions.get(kid, {}).get(chore, False)
 
-            done = st.checkbox(
-                chore,
-                value=current_done,
-                key=key
-            )
+            done = st.checkbox(chore, value=cur, key=key)
 
-            if done != current_done:
+            if done != cur:
                 data.setdefault("completions", {}).setdefault(kid, {})[chore] = done
                 updated = True
 
     if updated:
         ref.set(data)
         update_streaks_and_points()
-        st.success("Changes saved and synced!")
+        st.success("Saved & synced!")
         st.rerun()
 
-# ─── Streaks & Points Display ────────────────────────────────────────────────────
+# ─── Progress Display ────────────────────────────────────────────────────────────
 st.markdown("### Progress & Rewards")
 
 for kid in data["kids"]:
-    streak = data["streaks"].get(kid, 0)
-    points = data["points"].get(kid, 0)
-    reward = get_reward(points)
-
+    strk = data["streaks"].get(kid, 0)
+    pts = data["points"].get(kid, 0)
+    rew = get_reward(pts)
     st.markdown(f"**{kid}**")
-    st.markdown(f"🔥 Streak: **{streak}** day{'s' if streak != 1 else ''}")
-    st.markdown(f"⭐ Points: **{points}**")
-    st.progress(min(points / 300, 1.0), text=f"Next reward: {reward}")
-    st.caption(f"Reward unlocked: {reward}")
+    st.markdown(f"🔥 Streak: **{strk}** day{'s' if strk != 1 else ''}")
+    st.markdown(f"⭐ Points: **{pts}**")
+    st.progress(min(pts / 300, 1.0), text=f"Next: {rew}")
+    st.caption(f"Reward: {rew}")
     st.markdown("---")
 
-# ─── Celebration if all done today ───────────────────────────────────────────────
+# ─── Celebration ─────────────────────────────────────────────────────────────────
 if assignments:
-    total_chores = sum(len(tasks) for tasks in assignments.values())
-    done_chores = sum(
-        sum(1 for v in kid_compl.values() if v)
-        for kid_compl in completions.values()
-    )
+    total = sum(len(t) for t in assignments.values())
+    done = sum(sum(1 for v in c.values() if v) for c in completions.values())
 
-    if total_chores > 0 and done_chores == total_chores:
+    if total > 0 and done == total:
         st.balloons()
-        st.markdown(
-            """
-            <div style="text-align: center; font-size: 2.8em; color: #2ecc71; margin: 40px 0;">
-            🎉 ALL DONE TODAY! 🎉
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-        st.markdown(
-            "<p style='text-align: center; font-size: 1.4em; color: #27ae60;'>"
-            "You're absolute legends Ruby & Sofia! 🌟✨ Keep the streak & points going!"
-            "</p>",
-            unsafe_allow_html=True
-        )
+        st.markdown("<h2 style='text-align:center; color:#2ecc71'>🎉 ALL DONE TODAY! 🎉</h2>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align:center; font-size:1.3em; color:#27ae60'>Great job Ruby & Sofia! 🌟 Keep going!</p>", unsafe_allow_html=True)
 
-# Manual refresh
+# Refresh
 if st.button("Refresh / Sync Now"):
     st.rerun()
 
 if not assignments:
-    st.info("No assignments yet. Click 'Generate New Assignments' to start!")
+    st.info("No assignments yet — generate some!")
 
 st.markdown("---")
-st.caption("App by Flynnchilada • Synced via Firebase • Add to iPhone home screen")
+st.caption("App by Flynnchilada • Firebase sync • Add to iPhone home screen")
