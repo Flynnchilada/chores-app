@@ -86,7 +86,7 @@ def update_streaks_and_points():
     all_done = total_chores > 0 and done_chores == total_chores
 
     for kid in data["kids"]:
-        # Individual chore points are now handled per checkbox — not here
+        # Individual +10 per chore is now handled in checkbox callback
         if all_done:
             points[kid] += 50  # family completion bonus
 
@@ -257,17 +257,23 @@ else:
             key = f"{kid}_{chore.replace(' ', '_').replace("'", '')}"
             cur = completions.get(kid, {}).get(chore, False)
 
-            def on_chore_change(new_value, k=kid, c=chore):
-                old_value = completions.get(k, {}).get(c, False)
-                data["completions"].setdefault(k, {})[c] = new_value
+            def on_chore_change():
+                # Read the current checkbox value from session state
+                new_value = st.session_state.get(key, False)
 
-                # Only award points when changing from False → True
+                old_value = completions.get(kid, {}).get(chore, False)
+
+                # Update completion status in data
+                data["completions"].setdefault(kid, {})[chore] = new_value
+
+                # Award points ONLY when changing from False → True
                 if new_value and not old_value:
-                    current_points = data["points"].get(k, 0)
-                    data["points"][k] = current_points + 10
+                    current_points = data["points"].get(kid, 0)
+                    data["points"][kid] = current_points + 10
                     ref.set(data)
-                    st.toast(f"+10 points for {k} completing '{c}'!", icon="⭐")
+                    st.toast(f"+10 points for {kid} completing '{chore}'!", icon="⭐")
 
+                # Always save and update streaks/bonus
                 ref.set(data)
                 update_streaks_and_points()
                 st.rerun()
