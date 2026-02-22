@@ -46,11 +46,11 @@ def get_data():
     data.setdefault("streaks", {"Ruby": 0, "Sofia": 0})
     data.setdefault("last_completed_days", {"Ruby": None, "Sofia": None})
     data.setdefault("points", {"Ruby": 0, "Sofia": 0})
-    data.setdefault("badges", {"Ruby": [], "Sofia": []})
-    data.setdefault("total_chores_completed", {"Ruby": 0, "Sofia": 0})
-    data.setdefault("family_all_done_count", 0)
-    data.setdefault("daily_completions", {})  # New: track per day for leaderboard
+    data.setdefault("badges", {"Ruby": [], "Sofia": []})  # New: earned badges
+    data.setdefault("total_chores_completed", {"Ruby": 0, "Sofia": 0})  # For badge tracking
+    data.setdefault("family_all_done_count", 0)  # Family-wide perfect days
 
+    # Default rewards (editable)
     data.setdefault("rewards", [
         {"points": 50,  "text": "Ice cream treat 🍦"},
         {"points": 100, "text": "Extra screen time 30 min 🎮"},
@@ -63,43 +63,12 @@ def get_data():
 
 data = get_data()
 
-# ─── Leaderboard logic ───────────────────────────────────────────────────────────
-def get_leaderboard():
-    # Today's leaderboard (chores completed today)
-    today_compl = data.get("daily_completions", {}).get(today, {"Ruby": 0, "Sofia": 0})
-    today_rank = sorted(
-        [(kid, today_compl.get(kid, 0), data["points"].get(kid, 0))
-         for kid in data["kids"]],
-        key=lambda x: (-x[1], -x[2])  # chores desc, then points desc
-    )
-
-    # All-time leaderboard (points + badge count)
-    all_time_rank = sorted(
-        [(kid, data["points"].get(kid, 0), len(data["badges"].get(kid, [])))
-         for kid in data["kids"]],
-        key=lambda x: (-x[1], -x[2])
-    )
-
-    return today_rank, all_time_rank
-
-def update_daily_completions():
-    if today not in data.setdefault("daily_completions", {}):
-        data["daily_completions"][today] = {"Ruby": 0, "Sofia": 0}
-
-    for kid in data["kids"]:
-        done_today = sum(1 for v in completions.get(kid, {}).values() if v)
-        data["daily_completions"][today][kid] = done_today
-
-    ref.set(data)
-
-update_daily_completions()
-
-# ─── Reward & Level ──────────────────────────────────────────────────────────────
+# ─── Dynamic reward & level ──────────────────────────────────────────────────────
 def get_level(points):
-    if points >= 300: return "Level 4 – Superstar 🌟"
-    if points >= 200: return "Level 3 – Champion 🏆"
-    if points >= 100: return "Level 2 – Rising Hero 🚀"
-    return "Level 1 – Starter 🌱"
+    if points >= 300: return "Level 4 - Superstar 🌟"
+    if points >= 200: return "Level 3 - Champion 🏆"
+    if points >= 100: return "Level 2 - Rising Hero 🚀"
+    return "Level 1 - Starter 🌱"
 
 def get_reward(points):
     rewards = sorted(data.get("rewards", []), key=lambda x: x["points"], reverse=True)
@@ -108,40 +77,122 @@ def get_reward(points):
             return r["text"]
     return "Keep going! Next reward soon"
 
-# ─── Badge system (unchanged from previous) ──────────────────────────────────────
-# ... (keep your existing BADGES dict and check_and_award_badges function)
+# ─── Badge definitions & check ───────────────────────────────────────────────────
+BADGES = {
+    "Streak Star": {"desc": "7-day streak", "icon": "⭐", "condition": lambda s: s >= 7},
+    "Chore Champion": {"desc": "50 chores completed", "icon": "🏅", "condition": lambda c: c >= 50},
+    "Family Hero": {"desc": "10 perfect family days", "icon": "🦸", "condition": lambda f: f >= 10},
+    "Perfect Week": {"desc": "All chores done 7 days in a row", "icon": "🔥", "condition": lambda s: s >= 7 and data["family_all_done_count"] >= 1}
+}
+
+def check_and_award_badges():
+    updated = False
+    for kid in data["kids"]:
+        badges = data["badges"].get(kid, [])
+        streak = data["streaks"].get(kid, 0)
+        completed = data["total_chores_completed"].get(kid, 0)
+
+        for badge_name, info in BADGES.items():
+            if badge_name not in badges and info["condition"](streak if "Streak" in badge_name else completed):
+                badges.append(badge_name)
+                updated = True
+                st.toast(f"{kid} earned badge: {info['icon']} {badge_name}!", icon="🎖️")
+
+        data["badges"][kid] = badges
+
+    if updated:
+        ref.set(data)
+
+check_and_award_badges()
 
 # Early defs
 assignments = data.get("last_assignments", {})
 completions = data.get("completions", {})
 
+# ─── Update streaks & points ─────────────────────────────────────────────────────
+def update_streaks_and_points():
+    yesterday_str = (date.today() - timedelta(days=1)).isoformat()
+
+    streaks = data.get("streaks", {"Ruby": 0, "Sofia": 0})
+    last_completed = data.get("last_completed_days", {"Ruby": None, "Sofia": None})
+    points = data.get("points", {"Ruby": 0, "Sofia": 0})
+
+    total_chores = sum(len(t) for t in assignments.values())
+    done_chores = sum(sum(1 for v in c.values() if v) for c in completions.values())
+
+    all_done = total_chores > 0 and done_chores == total_chores
+
+    if all_done:
+        data["family_all_done_count"] = data.get("family_all_done_count", 0) + 1
+
+    for kid in data["kids"]:
+        if all_done:
+            points[kid] += 50
+
+        last_day = last_completed.get(kid)
+        streak = streaks.get(kid, 0)
+
+        if all_done:
+            streak = streak + 1 if last_day == yesterday_str else 1
+            last_completed[kid] = today
+        else:
+            streak = 0
+
+        streaks[kid] = streak
+
+    data["points"] = points
+    data["streaks"] = streaks
+    data["last_completed_days"] = last_completed
+    ref.set(data)
+
+    # Check badges after update
+    check_and_award_badges()
+
+update_streaks_and_points()
+
+# ─── Admin check ─────────────────────────────────────────────────────────────────
+is_admin = False
+with st.sidebar:
+    st.markdown("**Parent Admin**")
+    pw = st.text_input("Password", type="password", key="pw")
+    if pw == ADMIN_PASSWORD:
+        is_admin = True
+        st.success("Admin OK")
+    elif pw:
+        st.error("Wrong password")
+
 # ─── Main UI ─────────────────────────────────────────────────────────────────────
 st.title("Ruby & Sofia Chore Manager")
 st.subheader(f"Today: {today_display}")
 
-# ─── Leaderboards (visible to everyone) ──────────────────────────────────────────
-st.markdown("### 🏆 Leaderboards")
+if is_admin:
+    st.header("Admin Dashboard")
 
-today_rank, all_time_rank = get_leaderboard()
+    col1, col2 = st.columns(2)
 
-col_today, col_all = st.columns(2)
+    with col1:
+        st.subheader("Current Status")
+        for kid in data["kids"]:
+            p = data["points"].get(kid, 0)
+            s = data["streaks"].get(kid, 0)
+            lvl = get_level(p)
+            badges = data["badges"].get(kid, [])
+            st.markdown(f"**{kid}** · {lvl}")
+            st.markdown(f"Points: **{p}** · Streak: **{s}** 🔥")
+            st.caption(f"Reward: {get_reward(p)}")
+            if badges:
+                st.write("Badges: " + " ".join([f"{BADGES[b]['icon']}" for b in badges]))
+            st.markdown("---")
 
-with col_today:
-    st.subheader("Today's Race")
-    for rank, (kid, chores_done, pts) in enumerate(today_rank, 1):
-        medal = "🥇" if rank == 1 else "🥈" if rank == 2 else "🥉" if rank == 3 else f"{rank}."
-        st.markdown(f"{medal} **{kid}** – {chores_done} chores done")
+    with col2:
+        # ... (manual adjustments, reward tiers, chores management remain the same)
+        # (copy from previous version if needed - omitted here for brevity)
 
-with col_all:
-    st.subheader("All-Time Champions")
-    for rank, (kid, pts, badge_count) in enumerate(all_time_rank, 1):
-        medal = "🥇" if rank == 1 else "🥈" if rank == 2 else "🥉" if rank == 3 else f"{rank}."
-        st.markdown(f"{medal} **{kid}** – {pts} points • {badge_count} badges")
+else:
+    # Kid view - chores loop remains the same as last fix
+    # ... (keep your existing Generate button and checkbox loop)
 
-# ─── Rest of the UI (admin / kid view) remains the same ──────────────────────────
-# ... (paste your existing admin and kid view code here, including checkbox loop)
-
-# ─── Progress section (add leaderboard note if needed) ───────────────────────────
+# ─── Progress & Rewards ──────────────────────────────────────────────────────────
 st.markdown("### Progress & Rewards")
 for kid in data["kids"]:
     p = data["points"].get(kid, 0)
@@ -150,18 +201,25 @@ for kid in data["kids"]:
     badges = data["badges"].get(kid, [])
 
     st.markdown(f"**{kid}** · {lvl}")
-    st.markdown(f"🔥 Streak: **{s}** • ⭐ Points: **{p}**")
-    st.progress(min(p / 400, 1.0), text=f"Next: {get_reward(p)}")  # extended to 400 for level 4 feel
+    st.markdown(f"🔥 Streak: **{s}** day{'s' if s != 1 else ''}")
+    st.markdown(f"⭐ Points: **{p}**")
+    st.progress(min(p / 300, 1.0), text=f"Next: {get_reward(p)}")
 
     if badges:
-        st.markdown("**Badges**")
+        st.markdown("**Badges earned**")
         cols = st.columns(len(badges))
         for i, b in enumerate(badges):
-            cols[i].markdown(f"**{BADGES[b]['icon']}** {b}")
+            cols[i].markdown(f"<div title='{BADGES[b]['desc']}'>{BADGES[b]['icon']} {b}</div>", unsafe_allow_html=True)
 
     st.markdown("---")
 
 # ─── Celebration ─────────────────────────────────────────────────────────────────
-# ... (keep your existing celebration code)
+if assignments:
+    total = sum(len(v) for v in assignments.values())
+    done = sum(sum(1 for v in c.values() if v) for c in completions.values())
+    if total > 0 and done == total:
+        st.balloons()
+        st.markdown("### 🎉 ALL DONE TODAY! 🎉")
+        st.markdown("Great job Ruby & Sofia! 🌟")
 
 st.caption("Flynnchilada • Firebase • Add to home screen")
