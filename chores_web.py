@@ -6,37 +6,61 @@ import json
 from datetime import date
 
 # ─── Firebase Setup ──────────────────────────────────────────────────────────────
-# This block runs once when the app loads
 if 'firebase_initialized' not in st.session_state:
     st.session_state.firebase_initialized = False
 
 if not st.session_state.firebase_initialized:
+    st.write("Attempting to connect to Firebase...")  # visible feedback
+    
     try:
-        # Load the full service account JSON from Streamlit secrets
-        # You must have added this in Settings → Secrets:
-        # [firebase]
-        # service_account_json = '''
-        # { ... your full JSON content here ... }
-        # '''
+        # 1. Check if secret exists
+        if "firebase" not in st.secrets:
+            raise KeyError("No 'firebase' section found in secrets")
+            
+        if "service_account_json" not in st.secrets["firebase"]:
+            raise KeyError("No 'service_account_json' key found in secrets['firebase']")
+        
         service_account_str = st.secrets["firebase"]["service_account_json"]
+        st.write("Secret loaded (length:", len(service_account_str), "characters)")
         
-        # Parse the string into a Python dictionary
+        # 2. Parse JSON string → dict
         service_account_info = json.loads(service_account_str)
+        st.write("JSON parsed successfully")
         
-        # Create credentials from the dict (firebase-admin supports this)
+        # 3. Create credentials
         cred = credentials.Certificate(service_account_info)
+        st.write("Credentials object created")
         
-        # Initialize Firebase
+        # 4. Initialize
         firebase_admin.initialize_app(cred, {
             'databaseURL': 'https://chores-1a1ac-default-rtdb.asia-southeast1.firebasedatabase.app/'
         })
         
         st.session_state.firebase_initialized = True
-        st.success("Connected to Firebase successfully")
+        st.success("Firebase connected successfully!")
+        
+    except KeyError as ke:
+        st.error(f"Secrets configuration error: {ke}")
+        st.error("Go to app Settings → Secrets and make sure you have:")
+        st.code("""
+[firebase]
+service_account_json = '''
+{ your full JSON here }
+'''
+        """)
+        st.stop()
+        
+    except json.JSONDecodeError:
+        st.error("Invalid JSON format in service_account_json secret")
+        st.error("Make sure the JSON is valid and properly escaped (especially private_key line breaks)")
+        st.stop()
         
     except Exception as e:
-        st.error(f"Firebase connection failed: {str(e)}")
-        st.error("Please check that you have correctly added the 'firebase' → 'service_account_json' secret in app Settings.")
+        st.error(f"Firebase initialization failed: {str(e)}")
+        st.error("Common causes:")
+        st.markdown("- Secret is missing or misspelled")
+        st.markdown("- JSON has syntax error (missing comma, wrong quotes)")
+        st.markdown("- Private key line breaks not preserved")
         st.stop()
 
 # Database reference
