@@ -55,7 +55,7 @@ def get_data():
     # Ensure all fields exist
     for field in ["points", "streaks", "last_completed_days"]:
         if field not in data:
-            if field == "points" or field == "streaks":
+            if field in ["points", "streaks"]:
                 data[field] = {"Ruby": 0, "Sofia": 0}
             else:
                 data[field] = {"Ruby": None, "Sofia": None}
@@ -64,7 +64,7 @@ def get_data():
 
 data = get_data()
 
-# ─── Define key variables early so they are always available ─────────────────────
+# ─── Define key variables early ──────────────────────────────────────────────────
 assignments = data.get("last_assignments", {})
 completions = data.get("completions", {})
 
@@ -131,7 +131,7 @@ def get_reward(points):
         return "Keep going! Next reward at 50 points"
 
 # ─── Admin Password (CHANGE THIS!) ───────────────────────────────────────────────
-ADMIN_PASSWORD = "parent123"  # ← CHANGE THIS TO SOMETHING ONLY YOU KNOW
+ADMIN_PASSWORD = "Harlindon2026"  # ← CHANGE THIS TO SOMETHING ONLY YOU KNOW
 
 # ─── Check if user is admin ──────────────────────────────────────────────────────
 is_admin = False
@@ -168,16 +168,19 @@ if is_admin:
     
     with col2:
         st.subheader("Manual Adjustments")
-        selected_kid = st.selectbox("Select kid", data["kids"])
-        adjustment = st.number_input("Add/subtract points", value=0, step=10)
-        if st.button("Apply Points Change"):
-            data["points"][selected_kid] += adjustment
-            ref.set(data)
-            st.success(f"{adjustment} points applied to {selected_kid}")
-            st.rerun()
+        selected_kid = st.selectbox("Select kid", data["kids"], key="admin_kid_select")
+        adjustment = st.number_input("Add/subtract points", value=0, step=10, key="admin_points_adjust")
         
-        if st.button("Reset All Streaks & Points"):
-            if st.checkbox("Are you sure? This cannot be undone"):
+        if st.button("Apply Points Change", key="apply_points_btn"):
+            current_points = data["points"].get(selected_kid, 0)
+            new_points = current_points + adjustment
+            data["points"][selected_kid] = new_points
+            ref.set(data)  # Save immediately
+            st.success(f"{adjustment} points applied → {selected_kid} now has **{new_points}** points")
+            st.rerun()  # Reload UI with fresh data
+        
+        if st.button("Reset All Streaks & Points", key="reset_all_btn"):
+            if st.checkbox("Confirm reset (cannot be undone)", key="confirm_reset"):
                 data["streaks"] = {"Ruby": 0, "Sofia": 0}
                 data["points"] = {"Ruby": 0, "Sofia": 0}
                 data["last_completed_days"] = {"Ruby": None, "Sofia": None}
@@ -185,23 +188,29 @@ if is_admin:
                 st.success("Streaks and points reset")
                 st.rerun()
 
-    # Admin chore management (optional)
+    # Manage Chores List
     st.subheader("Manage Chores List")
-    current_chores = data["chores"]
-    new_chore = st.text_input("Add new chore")
-    if st.button("Add Chore") and new_chore:
-        if new_chore not in current_chores:
-            current_chores.append(new_chore)
+    current_chores = data.get("chores", [])
+    
+    # Add new chore
+    new_chore = st.text_input("Add new chore", key="new_chore_input")
+    if st.button("Add Chore", key="add_chore_btn") and new_chore.strip():
+        cleaned_chore = new_chore.strip()
+        if cleaned_chore not in current_chores:
+            current_chores.append(cleaned_chore)
             data["chores"] = current_chores
             ref.set(data)
-            st.success(f"Added: {new_chore}")
+            st.success(f"Added: **{cleaned_chore}**")
             st.rerun()
-    
+        else:
+            st.warning("Chore already exists")
+
+    # Show and remove chores
     st.write("Current chores:")
     for chore in current_chores:
-        col_chore, col_del = st.columns([4, 1])
+        col_chore, col_del = st.columns([5, 1])
         col_chore.write(chore)
-        if col_del.button("Remove", key=f"del_{chore}"):
+        if col_del.button("Remove", key=f"del_chore_{chore}"):
             current_chores.remove(chore)
             data["chores"] = current_chores
             ref.set(data)
