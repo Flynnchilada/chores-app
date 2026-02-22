@@ -114,6 +114,32 @@ if updated:
     st.success("Changes saved and synced!")
     st.rerun()
 
+# ─── Celebration if all chores are done ──────────────────────────────────────────
+if assignments:  # only check if there are assignments today
+    total_chores = sum(len(tasks) for tasks in assignments.values())
+    done_chores = sum(
+        sum(1 for v in kid_compl.values() if v)
+        for kid_compl in completions.values()
+    )
+
+    if total_chores > 0 and done_chores == total_chores:
+        st.balloons()  # confetti explosion!
+        st.markdown(
+            """
+            <div style="text-align: center; font-size: 2.5em; color: #2ecc71; margin: 30px 0;">
+            🎉 ALL DONE TODAY! 🎉
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+        st.markdown(
+            "<p style='text-align: center; font-size: 1.3em; color: #27ae60;'>"
+            "Amazing job Ruby & Sofia! You're superstars! 🌟🐶🐱✨"
+            "</p>",
+            unsafe_allow_html=True
+        )
+
+# Manual refresh
 if st.button("Refresh / Sync Now"):
     st.rerun()
 
