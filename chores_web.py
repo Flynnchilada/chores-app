@@ -6,9 +6,13 @@ import json
 from datetime import date, timedelta
 
 # ─── CONFIG ─────────────────────────────────────────────────────────────────────
-TEAM_CHORES = ["Clean Rooms", "Tidy Playroom", "Family Clean-up", "Garden Watering"]  # ← Add more here
+TEAM_CHORES = ["Clean Rooms", "Tidy Playroom", "Family Clean-up", "Garden Watering"]  # ← Add more team chores here
 
 ADMIN_PASSWORD = "parent123"  # ← CHANGE THIS TO SOMETHING ONLY YOU KNOW!
+
+# ─── Date helpers ───────────────────────────────────────────────────────────────
+today = date.today().isoformat()
+today_display = date.today().strftime('%A, %d %B %Y')
 
 # ─── Firebase Setup ──────────────────────────────────────────────────────────────
 try:
@@ -53,7 +57,6 @@ completions = data.get("completions", {})
 
 # ─── Update streaks & points ─────────────────────────────────────────────────────
 def update_streaks_and_points():
-    today_str = date.today().isoformat()
     yesterday_str = (date.today() - timedelta(days=1)).isoformat()
 
     streaks = data.get("streaks", {"Ruby": 0, "Sofia": 0})
@@ -76,7 +79,7 @@ def update_streaks_and_points():
 
         if all_done:
             streak = streak + 1 if last_day == yesterday_str else 1
-            last_completed[kid] = today_str
+            last_completed[kid] = today
         else:
             streak = 0
 
@@ -110,7 +113,7 @@ with st.sidebar:
 
 # ─── Main UI ─────────────────────────────────────────────────────────────────────
 st.title("Ruby & Sofia Chore Manager")
-st.subheader(f"Today: {date.today().strftime('%A, %d %B %Y')}")
+st.subheader(f"Today: {today_display}")
 
 if is_admin:
     st.header("Admin Dashboard (Parent Only)")
@@ -184,12 +187,12 @@ else:
 
         ass = {kid: [] for kid in data["kids"]}
 
-        # Team chores go to BOTH kids
+        # Team chores assigned to BOTH kids
         for chore in team_chores:
             for kid in data["kids"]:
                 ass[kid].append(chore)
 
-        # Individual chores distributed normally
+        # Individual chores distributed randomly
         for i, chore in enumerate(individual_chores):
             ass[data["kids"][i % len(data["kids"])]].append(chore)
 
