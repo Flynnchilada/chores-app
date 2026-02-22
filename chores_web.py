@@ -1,156 +1,3 @@
-import streamlit as st
-import firebase_admin
-from firebase_admin import credentials, db
-import json
-from datetime import date
-
-# ─── CONFIG ─────────────────────────────────────────────────────────────
-TEAM_CHORES = ["Clean Rooms", "Tidy Playroom", "Family Clean-up", "Garden Watering"]
-ADMIN_PASSWORD = "parent123"  # ← CHANGE THIS!
-
-today = date.today().isoformat()
-today_display = date.today().strftime('%A, %d %B %Y')
-
-# ─── Firebase Setup ──────────────────────────────────────────────────────
-try:
-    service_account_str = st.secrets["firebase"]["service_account_json"]
-    service_account_info = json.loads(service_account_str)
-    cred = credentials.Certificate(service_account_info)
-
-    if not firebase_admin._apps:
-        firebase_admin.initialize_app(cred, {
-            'databaseURL': 'https://chores-1a1ac-default-rtdb.asia-southeast1.firebasedatabase.app/'
-        })
-except Exception as e:
-    st.error(f"Firebase failed: {str(e)}")
-    st.stop()
-
-ref = db.reference("/chores/ruby_sofia")
-
-# ─── Load / Init Data ────────────────────────────────────────────────────
-def get_data():
-    data = ref.get() or {}
-
-    data.setdefault("kids", ["Ruby", "Sofia"])
-    data.setdefault("chores", [
-        "Feed dog", "Do dog poo", "Feed cat", "Clean kitty litter",
-        "Put away dishes", "Put away clean clothes",
-        "Take out rubbish bins", "Wipe kitchen bench"
-    ])
-
-    data.setdefault("last_assignments", {})
-    data.setdefault("completions", {})
-    data.setdefault("streaks", {"Ruby": 0, "Sofia": 0})
-    data.setdefault("points", {"Ruby": 0, "Sofia": 0})
-    data.setdefault("badges", {"Ruby": [], "Sofia": []})
-    data.setdefault("total_chores_completed", {"Ruby": 0, "Sofia": 0})
-    data.setdefault("family_all_done_count", 0)
-    data.setdefault("daily_completions", {})
-
-    data.setdefault("rewards", [
-        {"points": 50,  "text": "Ice cream treat 🍦"},
-        {"points": 100, "text": "Extra screen time 30 min 🎮"},
-        {"points": 200, "text": "Movie night pick 🍿"},
-        {"points": 300, "text": "Special family outing 🌟"}
-    ])
-
-    ref.set(data)
-    return data
-
-data = get_data()
-assignments = data.get("last_assignments", {})
-completions = data.get("completions", {})
-
-# ─── Leaderboard Logic ───────────────────────────────────────────────────
-def get_leaderboard():
-    today_compl = data.get("daily_completions", {}).get(
-        today, {"Ruby": 0, "Sofia": 0}
-    )
-
-    today_rank = sorted(
-        [(kid, today_compl.get(kid, 0), data["points"].get(kid, 0))
-         for kid in data["kids"]],
-        key=lambda x: (-x[1], -x[2])
-    )
-
-    all_time_rank = sorted(
-        [(kid, data["points"].get(kid, 0), len(data["badges"].get(kid, [])))
-         for kid in data["kids"]],
-        key=lambda x: (-x[1], -x[2])
-    )
-
-    return today_rank, all_time_rank
-
-# ─── Reward + Level ──────────────────────────────────────────────────────
-def get_level(points):
-    if points >= 300: return "Level 4 – Superstar 🌟"
-    if points >= 200: return "Level 3 – Champion 🏆"
-    if points >= 100: return "Level 2 – Rising Hero 🚀"
-    return "Level 1 – Starter 🌱"
-
-def get_reward(points):
-    rewards = sorted(data.get("rewards", []),
-                     key=lambda x: x["points"],
-                     reverse=True)
-    for r in rewards:
-        if points >= r["points"]:
-            return r["text"]
-    return "Keep going! Next reward soon"
-
-# ─── Fixed Chore Change Logic ────────────────────────────────────────────
-def on_chore_change(kid, chore, key):
-    global data
-
-    new_value = st.session_state.get(key, False)
-    old_value = data.get("completions", {}).get(kid, {}).get(chore, False)
-
-    data.setdefault("completions", {})
-    data["completions"].setdefault(kid, {})
-    data["completions"][kid][chore] = new_value
-
-    # Award points only once
-    if new_value and not old_value:
-        data["points"][kid] = data["points"].get(kid, 0) + 10
-        data["total_chores_completed"][kid] = \
-            data["total_chores_completed"].get(kid, 0) + 1
-        st.toast(f"+10 points for {kid} completing '{chore}'!", icon="⭐")
-
-    # Update today's leaderboard count
-    data.setdefault("daily_completions", {})
-    if today not in data["daily_completions"]:
-        data["daily_completions"][today] = {
-            k: 0 for k in data["kids"]
-        }
-
-    done_today = sum(
-        1 for v in data["completions"].get(kid, {}).values() if v
-    )
-    data["daily_completions"][today][kid] = done_today
-
-    ref.set(data)
-
-# ─── UI ──────────────────────────────────────────────────────────────────
-st.title("Ruby & Sofia Chore Manager")
-st.subheader(f"Today: {today_display}")
-
-# ─── Leaderboards ────────────────────────────────────────────────────────
-st.markdown("### 🏆 Leaderboards")
-today_rank, all_time_rank = get_leaderboard()
-
-col_today, col_all = st.columns(2)
-
-with col_today:
-    st.subheader("Today's Race")
-    for rank, (kid, chores_done, pts) in enumerate(today_rank, 1):
-        medal = "🥇" if rank == 1 else "🥈" if rank == 2 else "🥉"
-        st.markdown(f"{medal} **{kid}** – {chores_done} chores done")
-
-with col_all:
-    st.subheader("All-Time Champions")
-    for rank, (kid, pts, badge_count) in enumerate(all_time_rank, 1):
-        medal = "🥇" if rank == 1 else "🥈" if rank == 2 else "🥉"
-        st.markdown(f"{medal} **{kid}** – {pts} points • {badge_count} badges")
-
 # ─── Parent Dashboard ────────────────────────────────────────────────────
 st.markdown("---")
 st.markdown("## 🔐 Parent Dashboard")
@@ -191,45 +38,20 @@ if admin_mode:
             ref.set(data)
             st.success(f"Added {bonus} points to {selected_kid}!")
 
+        # ─── Add New Chore ────────────────────────────────────────────────────
+        st.markdown("### Add New Chore")
+
+        new_chore = st.text_input("Enter a new chore", "")
+
+        if st.button("Add Chore"):
+            if new_chore:
+                # Add the new chore to the list of chores for each kid
+                for kid in data["kids"]:
+                    if new_chore not in data["chores"]:
+                        data["chores"].append(new_chore)
+                ref.set(data)  # Update the Firebase database with the new chore
+                st.success(f"New chore '{new_chore}' added!")
+            else:
+                st.error("Please enter a valid chore name.")
     elif password != "":
         st.error("Incorrect password")
-
-# ─── Chore Checkboxes ────────────────────────────────────────────────────
-st.markdown("### Today's Chores")
-
-for kid in data["kids"]:
-    st.subheader(kid)
-
-    for chore in assignments.get(kid, data["chores"]):
-        key = f"{kid}_{chore}"
-
-        st.checkbox(
-            chore,
-            value=data.get("completions", {}).get(kid, {}).get(chore, False),
-            key=key,
-            on_change=on_chore_change,
-            args=(kid, chore, key)
-        )
-
-# ─── Progress Section ────────────────────────────────────────────────────
-st.markdown("### Progress & Rewards")
-
-for kid in data["kids"]:
-    p = data["points"].get(kid, 0)
-    s = data["streaks"].get(kid, 0)
-    lvl = get_level(p)
-    badges = data["badges"].get(kid, [])
-
-    st.markdown(f"**{kid}** · {lvl}")
-    st.markdown(f"🔥 Streak: **{s}** • ⭐ Points: **{p}**")
-    st.progress(min(p / 400, 1.0), text=f"Next: {get_reward(p)}")
-
-    if badges:
-        st.markdown("**Badges**")
-        cols = st.columns(len(badges))
-        for i, b in enumerate(badges):
-            cols[i].markdown(f"🏅 {b}")
-
-    st.markdown("---")
-
-st.caption("Flynnchilada • Firebase • Add to home screen")
