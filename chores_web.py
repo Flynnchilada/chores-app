@@ -151,9 +151,18 @@ with st.expander("Parent Dashboard 🔒", expanded=True):
     elif admin_input:
         st.error("Incorrect password")
 
+# ─── Leaderboard ─────────────────────────────────────────────────────────
+st.markdown("### 🏆 Leaderboard")
+# Sort kids by points (descending)
+leaderboard = sorted(data["kids"], key=lambda k: data["points"][k], reverse=True)
+for rank, kid in enumerate(leaderboard, start=1):
+    badges = " ".join(data["badges"][kid]) if data["badges"][kid] else ""
+    st.markdown(
+        f"**{rank}. {kid}** – ⭐ {data['points'][kid]} pts | 🔥 {data['streaks'][kid]} streak {badges}"
+    )
+
 # ─── Chores ──────────────────────────────────────────────────────────────
 st.markdown("### Today's Chores")
-
 for kid in data["kids"]:
     st.subheader(kid)
     for chore in data["assignments"][kid]:
@@ -168,7 +177,6 @@ for kid in data["kids"]:
 
 # ─── Progress & Rewards ──────────────────────────────────────────────────
 st.markdown("### Progress")
-
 for kid in data["kids"]:
     st.markdown(f"**{kid}**")
     st.markdown(f"⭐ Points: {data['points'][kid]}")
