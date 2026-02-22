@@ -10,9 +10,11 @@ APP_NAME = 'chores-family-app'
 
 if APP_NAME not in _apps:
     try:
+        # Load secret JSON string from Streamlit secrets
         service_account_str = st.secrets["firebase"]["service_account_json"]
         service_account_info = json.loads(service_account_str)
 
+        # Define cred here (this was missing or failing)
         cred = credentials.Certificate(service_account_info)
 
         firebase_admin.initialize_app(cred, {
@@ -22,7 +24,7 @@ if APP_NAME not in _apps:
     except Exception as e:
         st.error("Firebase connection failed")
         st.error(str(e))
-        st.error("Verify the 'firebase' → 'service_account_json' secret in app Settings.")
+        st.error("Check 'firebase' → 'service_account_json' in Settings → Secrets.")
         st.stop()
 
 # Database reference
@@ -52,7 +54,7 @@ def get_data():
         ref.set(default_data)
         return default_data
     
-    # Ensure all fields
+    # Ensure fields exist
     for field in ["points", "streaks", "last_completed_days"]:
         if field not in data:
             if field in ["points", "streaks"]:
@@ -64,7 +66,7 @@ def get_data():
 
 data = get_data()
 
-# ─── Define key variables early ──────────────────────────────────────────────────
+# ─── Define key variables EARLY so they are always available ─────────────────────
 assignments = data.get("last_assignments", {})
 completions = data.get("completions", {})
 
@@ -172,13 +174,13 @@ if is_admin:
         adjustment = st.number_input("Add/subtract points", value=0, step=10, key="admin_points_adjust")
         
         if st.button("Apply Points Change", key="apply_points_btn"):
-            if adjustment != 0:  # avoid zero changes
+            if adjustment != 0:
                 current_points = data["points"].get(selected_kid, 0)
                 new_points = current_points + adjustment
                 data["points"][selected_kid] = new_points
-                ref.set(data)  # Save immediately to Firebase
+                ref.set(data)  # Save immediately
                 st.success(f"Applied {adjustment} points → {selected_kid} now has **{new_points}** points")
-                st.rerun()  # Reload UI with fresh data
+                st.rerun()
             else:
                 st.info("No change (adjustment = 0)")
         
@@ -195,7 +197,6 @@ if is_admin:
     st.subheader("Manage Chores List")
     current_chores = data.get("chores", [])
     
-    # Add new chore
     new_chore = st.text_input("Add new chore", key="new_chore_input")
     if st.button("Add Chore", key="add_chore_btn") and new_chore.strip():
         cleaned_chore = new_chore.strip()
@@ -208,7 +209,6 @@ if is_admin:
         else:
             st.warning("Chore already exists")
 
-    # Show and remove chores
     st.write("Current chores:")
     for chore in current_chores:
         col_chore, col_del = st.columns([5, 1])
