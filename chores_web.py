@@ -92,7 +92,7 @@ def check_and_award_badges(data, kid):
             data.setdefault("badges", {}).setdefault(kid, []).append(badge)
             st.toast(f"{kid} earned badge: {badge}", icon="🏅")
 
-# ─── Chore Toggle Logic ──────────────────────────────────────────────────
+# ─── Chore Toggle Logic (Add/Remove points) ──────────────────────────────
 def on_chore_change(kid, chore, key):
     new_value = st.session_state.get(key, False)
     old_value = data.get("completions", {}).get(kid, {}).get(chore, False)
@@ -100,26 +100,33 @@ def on_chore_change(kid, chore, key):
     data.setdefault("completions", {}).setdefault(kid, {})
     data["completions"][kid][chore] = new_value
 
-    if new_value and not old_value:
-        data.setdefault("points", {}).setdefault(kid, 0)
-        data["points"][kid] += 10
-        data.setdefault("total_chores_completed", {}).setdefault(kid, 0)
-        data["total_chores_completed"][kid] += 1
+    # Update points and total chores completed
+    data.setdefault("points", {}).setdefault(kid, 0)
+    data.setdefault("total_chores_completed", {}).setdefault(kid, 0)
 
+    if new_value and not old_value:
+        data["points"][kid] += 10
+        data["total_chores_completed"][kid] += 1
+    elif not new_value and old_value:
+        data["points"][kid] = max(data["points"][kid] - 10, 0)
+        data["total_chores_completed"][kid] = max(data["total_chores_completed"][kid] - 1, 0)
+
+    # Check if all assigned chores done today
     assigned = data.get("assignments", {}).get(kid, [])
     done_today = all(
         data.get("completions", {}).get(kid, {}).get(c, False) for c in assigned
     )
 
+    # Update streaks and badges only if all chores are done
     if done_today:
         last = data.get("last_completed_date", {}).get(kid, "")
         yesterday = (today - timedelta(days=1)).isoformat()
 
+        data.setdefault("streaks", {}).setdefault(kid, 0)
+
         if last == yesterday:
-            data.setdefault("streaks", {}).setdefault(kid, 0)
             data["streaks"][kid] += 1
         elif last != today_key:
-            data.setdefault("streaks", {}).setdefault(kid, 0)
             data["streaks"][kid] = 1
 
         data.setdefault("last_completed_date", {})[kid] = today_key
@@ -199,7 +206,6 @@ with st.expander("Parent Dashboard 🔒", expanded=True):
         st.markdown("### ⚠️ Reset Everything")
         if st.button("Reset Everything"):
             for kid in data.get("kids", []):
-                # Reset points, streaks, total chores, badges
                 data.setdefault("points", {}).setdefault(kid, 0)
                 data["points"][kid] = 0
                 data.setdefault("streaks", {}).setdefault(kid, 0)
@@ -208,7 +214,6 @@ with st.expander("Parent Dashboard 🔒", expanded=True):
                 data["total_chores_completed"][kid] = 0
                 data.setdefault("badges", {}).setdefault(kid, [])
                 data["badges"][kid] = []
-                # Clear completions
                 if "completions" in data and kid in data["completions"]:
                     data["completions"][kid] = {}
             ref.set(data)
