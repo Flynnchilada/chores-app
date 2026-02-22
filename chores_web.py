@@ -130,12 +130,32 @@ st.subheader(f"Today: {today_display}")
 
 data = get_data()
 
+# ─── Parent Dashboard ────────────────────────────────────────────────────
+with st.expander("Parent Dashboard 🔒", expanded=True):
+    admin_input = st.text_input("Enter admin password:", type="password")
+    if admin_input == ADMIN_PASSWORD:
+        st.markdown("### Family Overview")
+        total_points = sum(data['points'].values())
+        total_chores = sum(data['total_chores_completed'].values())
+        avg_streak = sum(data['streaks'].values()) / len(data['kids'])
+
+        st.markdown(f"**Total Points:** {total_points}")
+        st.markdown(f"**Total Chores Completed:** {total_chores}")
+        st.markdown(f"**Average Streak:** {avg_streak:.1f}")
+
+        st.markdown("#### Individual Stats")
+        for kid in data["kids"]:
+            st.markdown(f"- **{kid}**: {data['points'][kid]} pts, "
+                        f"{data['streaks'][kid]}🔥 streak, "
+                        f"{data['total_chores_completed'][kid]} chores done")
+    elif admin_input:
+        st.error("Incorrect password")
+
 # ─── Chores ──────────────────────────────────────────────────────────────
 st.markdown("### Today's Chores")
 
 for kid in data["kids"]:
     st.subheader(kid)
-
     for chore in data["assignments"][kid]:
         key = f"{kid}_{chore}"
         st.checkbox(
