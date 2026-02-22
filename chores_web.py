@@ -41,14 +41,13 @@ def get_data():
     data.setdefault("assignments", {})
     data.setdefault("completions", {})
     data.setdefault("points", {k: 0 for k in data["kids"]})
-
     data.setdefault("streaks", {k: 0 for k in data["kids"]})
     data.setdefault("last_completed_date", {k: "" for k in data["kids"]})
     data.setdefault("total_chores_completed", {k: 0 for k in data["kids"]})
     data.setdefault("badges", {k: [] for k in data["kids"]})
+    data.setdefault("first_finisher_today", None)
 
     auto_assign_chores(data)
-
     ref.set(data)
     return data
 
@@ -94,7 +93,7 @@ def check_and_award_badges(data, kid):
             data.setdefault("badges", {}).setdefault(kid, []).append(badge)
             st.toast(f"{kid} earned badge: {badge}", icon="🏅")
 
-# ─── Chore Toggle Logic (Add/Remove points) ──────────────────────────────
+# ─── Chore Toggle Logic (Add/Remove points, first finisher) ─────────────
 def on_chore_change(kid, chore, key):
     new_value = st.session_state.get(key, False)
     old_value = data.get("completions", {}).get(kid, {}).get(chore, False)
@@ -122,7 +121,6 @@ def on_chore_change(kid, chore, key):
         yesterday = (today - timedelta(days=1)).isoformat()
 
         data.setdefault("streaks", {}).setdefault(kid, 0)
-
         if last == yesterday:
             data["streaks"][kid] += 1
         elif last != today_key:
@@ -130,6 +128,10 @@ def on_chore_change(kid, chore, key):
 
         data.setdefault("last_completed_date", {})[kid] = today_key
         check_and_award_badges(data, kid)
+
+        # ✅ First finisher logic
+        if data.get("first_finisher_today") is None:
+            data["first_finisher_today"] = kid
 
     ref.set(data)
 
@@ -187,14 +189,12 @@ with st.expander("Parent Dashboard 🔒", expanded=True):
 
         if st.button("Reset Streaks"):
             for kid in data.get("kids", []):
-                data.setdefault("streaks", {}).setdefault(kid, 0)
                 data["streaks"][kid] = 0
             ref.set(data)
             st.success("All streaks reset!")
 
         points_change = st.number_input("Points to Add / Remove:", value=0)
         if st.button("Update Points"):
-            data.setdefault("points", {}).setdefault(selected_kid, 0)
             data["points"][selected_kid] += points_change
             if data["points"][selected_kid] < 0:
                 data["points"][selected_kid] = 0
@@ -205,16 +205,12 @@ with st.expander("Parent Dashboard 🔒", expanded=True):
         st.markdown("### ⚠️ Reset Everything")
         if st.button("Reset Everything"):
             for kid in data.get("kids", []):
-                data.setdefault("points", {}).setdefault(kid, 0)
                 data["points"][kid] = 0
-                data.setdefault("streaks", {}).setdefault(kid, 0)
                 data["streaks"][kid] = 0
-                data.setdefault("total_chores_completed", {}).setdefault(kid, 0)
                 data["total_chores_completed"][kid] = 0
-                data.setdefault("badges", {}).setdefault(kid, [])
                 data["badges"][kid] = []
-                if "completions" in data and kid in data["completions"]:
-                    data["completions"][kid] = {}
+                data["completions"][kid] = {}
+            data["first_finisher_today"] = None
             ref.set(data)
             st.success("All data reset! Points, streaks, badges, and completions cleared.")
 
@@ -229,11 +225,13 @@ for rank, kid in enumerate(leaderboard, start=1):
     badges = " ".join(data.get("badges", {}).get(kid, []))
     points = data.get("points", {}).get(kid, 0)
     streak = data.get("streaks", {}).get(kid, 0)
-
+    
+    crown = " 👑" if data.get("first_finisher_today") == kid else ""
+    
     if rank == 1:
-        st.markdown(f"**{rank}. {kid} 🥇** – ⭐ {points} pts | 🔥 {streak} streak {badges}")
+        st.markdown(f"**{rank}. {kid} 🥇{crown}** – ⭐ {points} pts | 🔥 {streak} streak {badges}")
     else:
-        st.markdown(f"**{rank}. {kid}** – ⭐ {points} pts | 🔥 {streak} streak {badges}")
+        st.markdown(f"**{rank}. {kid}{crown}** – ⭐ {points} pts | 🔥 {streak} streak {badges}")
 
 # ─── Chores ──────────────────────────────────────────────────────────────
 st.markdown("### Today's Chores")
@@ -244,7 +242,7 @@ for kid in data.get("kids", []):
     for chore in data.get("assignments", {}).get(kid, []):
         key = f"{kid}_{chore}"
 
-        # Highlight weekly rotating chore (emoji + uppercase)
+        # Highlight weekly rotating chore
         if chore in weekly_chores:
             label = f"🔄 {chore.upper()} (this week's)"
         else:
