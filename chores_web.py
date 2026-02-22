@@ -47,22 +47,33 @@ def get_data():
             "completions": {},
             "streaks": {"Ruby": 0, "Sofia": 0},
             "last_completed_days": {"Ruby": None, "Sofia": None},
-            "points": {"Ruby": 0, "Sofia": 0},  # new: total points per kid
+            "points": {"Ruby": 0, "Sofia": 0},
         }
         ref.set(default_data)
         return default_data
     
-    # Ensure all fields exist
-    if "points" not in data:
-        data["points"] = {"Ruby": 0, "Sofia": 0}
-    if "streaks" not in data:
-        data["streaks"] = {"Ruby": 0, "Sofia": 0}
-    if "last_completed_days" not in data:
-        data["last_completed_days"] = {"Ruby": None, "Sofia": None}
+    # Ensure all fields
+    for field in ["points", "streaks", "last_completed_days"]:
+        if field not in data:
+            data[field] = {"Ruby": 0 if field == "points" else 0 if field == "streaks" else None}
     
     return data
 
 data = get_data()
+
+# ─── Admin Password (CHANGE THIS!) ───────────────────────────────────────────────
+ADMIN_PASSWORD = "Harlindon2026"  # ← CHANGE THIS TO SOMETHING ONLY YOU KNOW
+
+# ─── Check if user is admin ──────────────────────────────────────────────────────
+is_admin = False
+with st.sidebar:
+    st.markdown("**Parent Admin**")
+    password_input = st.text_input("Enter admin password", type="password", key="admin_pw")
+    if password_input == ADMIN_PASSWORD:
+        is_admin = True
+        st.success("Admin access granted")
+    elif password_input:
+        st.error("Wrong password")
 
 # ─── Update Streaks & Points ─────────────────────────────────────────────────────
 def update_streaks_and_points():
@@ -86,19 +97,14 @@ def update_streaks_and_points():
 
     all_done_today = total_chores > 0 and done_chores == total_chores
 
-    # Award points for completed chores
     for kid in data["kids"]:
         kid_tasks = len(assignments.get(kid, []))
         kid_done = sum(1 for v in completions.get(kid, {}).values() if v)
         
-        # +10 points per completed chore
         points[kid] += kid_done * 10
-
-        # +50 bonus if all family chores done today
         if all_done_today:
             points[kid] += 50
 
-        # Streak logic
         last_day = last_completed.get(kid)
         current_streak = streaks.get(kid, 0)
 
@@ -118,7 +124,6 @@ def update_streaks_and_points():
     data["last_completed_days"] = last_completed
     ref.set(data)
 
-# Run update on every load / change
 update_streaks_and_points()
 
 # ─── Reward Tiers ────────────────────────────────────────────────────────────────
@@ -140,81 +145,136 @@ st.title("Ruby & Sofia Chore Manager")
 today = date.today().strftime("%A, %d %B %Y")
 st.subheader(f"Today: {today}")
 
-if st.button("Generate New Assignments", type="primary"):
-    chores_copy = data["chores"][:]
-    random.shuffle(chores_copy)
+# ─── Kid View / Admin View ───────────────────────────────────────────────────────
+if is_admin:
+    st.markdown("### Admin Dashboard (Parent Only)")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("Current Status")
+        for kid in data["kids"]:
+            points = data["points"].get(kid, 0)
+            streak = data["streaks"].get(kid, 0)
+            st.markdown(f"**{kid}**")
+            st.markdown(f"Points: **{points}**")
+            st.markdown(f"Streak: **{streak}** days 🔥")
+            st.markdown(f"Reward: {get_reward(points)}")
+            st.markdown("---")
+    
+    with col2:
+        st.subheader("Manual Adjustments")
+        selected_kid = st.selectbox("Select kid", data["kids"])
+        adjustment = st.number_input("Add/subtract points", value=0, step=10)
+        if st.button("Apply Points Change"):
+            data["points"][selected_kid] += adjustment
+            ref.set(data)
+            st.success(f"{adjustment} points applied to {selected_kid}")
+            st.rerun()
+        
+        if st.button("Reset All Streaks & Points"):
+            if st.checkbox("Are you sure? This cannot be undone"):
+                data["streaks"] = {"Ruby": 0, "Sofia": 0}
+                data["points"] = {"Ruby": 0, "Sofia": 0}
+                data["last_completed_days"] = {"Ruby": None, "Sofia": None}
+                ref.set(data)
+                st.success("Streaks and points reset")
+                st.rerun()
 
-    assignments = {kid: [] for kid in data["kids"]}
-    for i, chore in enumerate(chores_copy):
-        kid = data["kids"][i % len(data["kids"])]
-        assignments[kid].append(chore)
+    # Admin chore management
+    st.subheader("Manage Chores List")
+    current_chores = data["chores"]
+    new_chore = st.text_input("Add new chore")
+    if st.button("Add Chore") and new_chore:
+        if new_chore not in current_chores:
+            current_chores.append(new_chore)
+            data["chores"] = current_chores
+            ref.set(data)
+            st.success(f"Added: {new_chore}")
+            st.rerun()
+    
+    st.write("Current chores:")
+    for chore in current_chores:
+        col_chore, col_del = st.columns([4, 1])
+        col_chore.write(chore)
+        if col_del.button("Remove", key=f"del_{chore}"):
+            current_chores.remove(chore)
+            data["chores"] = current_chores
+            ref.set(data)
+            st.rerun()
 
-    completions = {
-        kid: {chore: False for chore in tasks}
-        for kid, tasks in assignments.items()
-    }
+else:
+    # Normal kid view
+    if st.button("Generate New Assignments", type="primary"):
+        chores_copy = data["chores"][:]
+        random.shuffle(chores_copy)
 
-    data["last_date"] = today
-    data["last_assignments"] = assignments
-    data["completions"] = completions
-    # Reset today's completion tracking
-    data["last_completed_days"] = {kid: None for kid in data["kids"]}
+        assignments = {kid: [] for kid in data["kids"]}
+        for i, chore in enumerate(chores_copy):
+            kid = data["kids"][i % len(data["kids"])]
+            assignments[kid].append(chore)
 
-    ref.set(data)
-    st.success("New assignments created and synced!")
-    st.rerun()
+        completions = {
+            kid: {chore: False for chore in tasks}
+            for kid, tasks in assignments.items()
+        }
 
-st.markdown("### Today's Chores")
+        data["last_date"] = today
+        data["last_assignments"] = assignments
+        data["completions"] = completions
+        data["last_completed_days"] = {kid: None for kid in data["kids"]}
 
-assignments = data.get("last_assignments", {})
-completions = data.get("completions", {})
+        ref.set(data)
+        st.success("New assignments created and synced!")
+        st.rerun()
 
-updated = False
+    st.markdown("### Today's Chores")
 
-for kid in sorted(assignments.keys()):
-    st.markdown(f"**★ {kid}**")
-    tasks = assignments.get(kid, [])
+    assignments = data.get("last_assignments", {})
+    completions = data.get("completions", {})
 
-    if not tasks:
-        st.info("No chores today – nice break!")
-        continue
+    updated = False
 
-    for chore in sorted(tasks):
-        key = f"{kid}_{chore.replace(' ', '_').replace("'", '')}"
-        current_done = completions.get(kid, {}).get(chore, False)
+    for kid in sorted(assignments.keys()):
+        st.markdown(f"**★ {kid}**")
+        tasks = assignments.get(kid, [])
 
-        done = st.checkbox(
-            chore,
-            value=current_done,
-            key=key
-        )
+        if not tasks:
+            st.info("No chores today – nice break!")
+            continue
 
-        if done != current_done:
-            data.setdefault("completions", {}).setdefault(kid, {})[chore] = done
-            updated = True
+        for chore in sorted(tasks):
+            key = f"{kid}_{chore.replace(' ', '_').replace("'", '')}"
+            current_done = completions.get(kid, {}).get(chore, False)
 
-if updated:
-    ref.set(data)
-    update_streaks_and_points()
-    st.success("Changes saved and synced!")
-    st.rerun()
+            done = st.checkbox(
+                chore,
+                value=current_done,
+                key=key
+            )
 
-# ─── Streaks & Points Display ────────────────────────────────────────────────────
-st.markdown("### Progress & Rewards")
+            if done != current_done:
+                data.setdefault("completions", {}).setdefault(kid, {})[chore] = done
+                updated = True
 
-for kid in data["kids"]:
-    streak = data["streaks"].get(kid, 0)
-    points = data["points"].get(kid, 0)
-    reward = get_reward(points)
+    if updated:
+        ref.set(data)
+        update_streaks_and_points()
+        st.success("Changes saved and synced!")
+        st.rerun()
 
-    st.markdown(f"**{kid}**")
-    st.markdown(f"🔥 Streak: **{streak}** day{'s' if streak != 1 else ''}")
-    st.markdown(f"⭐ Points: **{points}**")
-    st.progress(min(points / 300, 1.0), text=f"Next reward: {reward}")
-    st.caption(f"Reward unlocked: {reward}")
-    st.markdown("---")
+    # Streaks & Points for kids
+    st.markdown("### Your Progress")
+    for kid in data["kids"]:
+        streak = data["streaks"].get(kid, 0)
+        points = data["points"].get(kid, 0)
+        reward = get_reward(points)
+        st.markdown(f"**{kid}**")
+        st.markdown(f"🔥 Streak: **{streak}** days")
+        st.markdown(f"⭐ Points: **{points}**")
+        st.progress(min(points / 300, 1.0), text=f"Next: {reward}")
 
-# ─── Celebration if all done today ───────────────────────────────────────────────
+# ─── Celebration ─────────────────────────────────────────────────────────────────
 if assignments:
     total_chores = sum(len(tasks) for tasks in assignments.values())
     done_chores = sum(
@@ -226,27 +286,24 @@ if assignments:
         st.balloons()
         st.markdown(
             """
-            <div style="text-align: center; font-size: 2.8em; color: #2ecc71; margin: 40px 0;">
+            <div style="text-align:center; font-size:2.8em; color:#2ecc71; margin:40px 0;">
             🎉 ALL DONE TODAY! 🎉
             </div>
             """,
             unsafe_allow_html=True
         )
         st.markdown(
-            "<p style='text-align: center; font-size: 1.4em; color: #27ae60;'>"
-            "You're absolute legends Ruby & Sofia! 🌟✨ Keep the streak & points going!"
+            "<p style='text-align:center; font-size:1.4em; color:#27ae60;'>"
+            "You're legends Ruby & Sofia! 🌟 Keep the streak & points growing!"
             "</p>",
             unsafe_allow_html=True
         )
 
-# Manual refresh
 if st.button("Refresh / Sync Now"):
     st.rerun()
 
 if not assignments:
-    st.info("No assignments yet. Click 'Generate New Assignments' to start!")
-else:
-    st.caption("Changes appear after refresh or interaction.")
+    st.info("No assignments yet. Generate new ones to start!")
 
 st.markdown("---")
 st.caption("App by Flynnchilada • Synced via Firebase • Add to iPhone home screen")
