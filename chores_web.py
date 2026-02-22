@@ -7,6 +7,7 @@ from datetime import date
 
 # ─── CONFIG ─────────────────────────────────────────────────────────────
 ADMIN_PASSWORD = "parent123"  # CHANGE THIS
+SHARED_CHORE = "Clean Rooms"
 
 today = date.today().isoformat()
 today_display = date.today().strftime('%A, %d %B %Y')
@@ -33,18 +34,44 @@ def get_data():
 
     data.setdefault("kids", ["Ruby", "Sofia"])
     data.setdefault("chores", [
-        "Feed dog", "Feed cat", "Clean kitty litter",
-        "Put away dishes", "Put away clothes",
-        "Take out rubbish bins", "Wipe kitchen bench"
+        "Clean Rooms",
+        "Feed dog",
+        "Feed cat",
+        "Clean kitty litter",
+        "Put away dishes",
+        "Put away clothes",
+        "Take out rubbish bins",
+        "Wipe kitchen bench"
     ])
-    data.setdefault("assignments", {k: [] for k in data["kids"]})
+    data.setdefault("assignments", {})
     data.setdefault("completions", {})
     data.setdefault("points", {k: 0 for k in data["kids"]})
+
+    auto_assign_chores(data)
 
     ref.set(data)
     return data
 
-data = get_data()
+# ─── Auto Assignment Logic ───────────────────────────────────────────────
+def auto_assign_chores(data):
+    kids = data["kids"]
+    chores = data["chores"]
+
+    # Remove shared chore from pool
+    normal_chores = [c for c in chores if c != SHARED_CHORE]
+
+    # Start clean
+    data["assignments"] = {k: [] for k in kids}
+
+    # Round-robin split
+    for i, chore in enumerate(normal_chores):
+        kid = kids[i % len(kids)]
+        data["assignments"][kid].append(chore)
+
+    # Add shared chore to everyone
+    for kid in kids:
+        if SHARED_CHORE not in data["assignments"][kid]:
+            data["assignments"][kid].append(SHARED_CHORE)
 
 # ─── Chore Toggle Logic ──────────────────────────────────────────────────
 def on_chore_change(kid, chore, key):
@@ -64,6 +91,8 @@ def on_chore_change(kid, chore, key):
 st.title("Ruby & Sofia Chore Manager")
 st.subheader(f"Today: {today_display}")
 
+data = get_data()
+
 # ─── Parent Dashboard ────────────────────────────────────────────────────
 st.markdown("---")
 st.markdown("## 🔐 Parent Dashboard")
@@ -74,7 +103,7 @@ if st.checkbox("Parent Login"):
     if password == ADMIN_PASSWORD:
         st.success("Parent Mode Active")
 
-        # ─── Add Chore ────────────────────────────────────────────────
+        # Add chore
         st.markdown("### ➕ Add Chore")
         new_chore = st.text_input("New chore name")
 
@@ -86,10 +115,12 @@ if st.checkbox("Parent Login"):
                 st.warning("Chore already exists")
             else:
                 data["chores"].append(new_chore)
+                auto_assign_chores(data)
                 ref.set(data)
                 st.success(f"Added: {new_chore}")
+                st.experimental_rerun()
 
-        # ─── Delete Chore ─────────────────────────────────────────────
+        # Delete chore
         st.markdown("### ❌ Delete Chore")
         chore_to_delete = st.selectbox("Select chore", data["chores"])
 
@@ -97,32 +128,12 @@ if st.checkbox("Parent Login"):
             data["chores"].remove(chore_to_delete)
 
             for kid in data["kids"]:
-                data["assignments"][kid].remove(chore_to_delete) \
-                    if chore_to_delete in data["assignments"][kid] else None
                 data.get("completions", {}).get(kid, {}).pop(chore_to_delete, None)
 
+            auto_assign_chores(data)
             ref.set(data)
             st.success(f"Deleted: {chore_to_delete}")
             st.experimental_rerun()
-
-        # ─── Assign Chores ────────────────────────────────────────────
-        st.markdown("### 👧 Assign Chores Per Child")
-
-        selected_kid = st.selectbox("Select Child", data["kids"])
-        selected_chore = st.selectbox("Select Chore", data["chores"])
-
-        if st.button("Assign Chore"):
-            if selected_chore not in data["assignments"][selected_kid]:
-                data["assignments"][selected_kid].append(selected_chore)
-                ref.set(data)
-                st.success(f"Assigned {selected_chore} to {selected_kid}")
-
-        if st.button("Unassign Chore"):
-            if selected_chore in data["assignments"][selected_kid]:
-                data["assignments"][selected_kid].remove(selected_chore)
-                data.get("completions", {}).get(selected_kid, {}).pop(selected_chore, None)
-                ref.set(data)
-                st.success(f"Unassigned {selected_chore} from {selected_kid}")
 
     elif password:
         st.error("Incorrect password")
@@ -134,10 +145,6 @@ for kid in data["kids"]:
     st.subheader(kid)
 
     chores = data["assignments"].get(kid, [])
-
-    if not chores:
-        st.info("No chores assigned today")
-        continue
 
     for chore in chores:
         key = f"{kid}_{chore}"
