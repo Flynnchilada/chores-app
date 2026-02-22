@@ -1,9 +1,8 @@
 import streamlit as st
 import firebase_admin
 from firebase_admin import credentials, db
-import random
 import json
-from datetime import date, timedelta
+from datetime import date
 
 # ─── CONFIG ─────────────────────────────────────────────────────────────
 TEAM_CHORES = ["Clean Rooms", "Tidy Playroom", "Family Clean-up", "Garden Watering"]
@@ -59,7 +58,6 @@ def get_data():
     return data
 
 data = get_data()
-
 assignments = data.get("last_assignments", {})
 completions = data.get("completions", {})
 
@@ -99,27 +97,25 @@ def get_reward(points):
             return r["text"]
     return "Keep going! Next reward soon"
 
-# ─── ✅ FIXED Chore Change Logic ─────────────────────────────────────────
+# ─── Fixed Chore Change Logic ────────────────────────────────────────────
 def on_chore_change(kid, chore, key):
-    global data, completions
+    global data
 
     new_value = st.session_state.get(key, False)
     old_value = data.get("completions", {}).get(kid, {}).get(chore, False)
 
     data.setdefault("completions", {})
     data["completions"].setdefault(kid, {})
-
     data["completions"][kid][chore] = new_value
 
-    # Only award points if newly completed
+    # Award points only once
     if new_value and not old_value:
         data["points"][kid] = data["points"].get(kid, 0) + 10
         data["total_chores_completed"][kid] = \
             data["total_chores_completed"].get(kid, 0) + 1
-
         st.toast(f"+10 points for {kid} completing '{chore}'!", icon="⭐")
 
-    # Update daily leaderboard
+    # Update today's leaderboard count
     data.setdefault("daily_completions", {})
     if today not in data["daily_completions"]:
         data["daily_completions"][today] = {
@@ -132,7 +128,6 @@ def on_chore_change(kid, chore, key):
     data["daily_completions"][today][kid] = done_today
 
     ref.set(data)
-    completions = data["completions"]
 
 # ─── UI ──────────────────────────────────────────────────────────────────
 st.title("Ruby & Sofia Chore Manager")
@@ -155,6 +150,49 @@ with col_all:
     for rank, (kid, pts, badge_count) in enumerate(all_time_rank, 1):
         medal = "🥇" if rank == 1 else "🥈" if rank == 2 else "🥉"
         st.markdown(f"{medal} **{kid}** – {pts} points • {badge_count} badges")
+
+# ─── Parent Dashboard ────────────────────────────────────────────────────
+st.markdown("---")
+st.markdown("## 🔐 Parent Dashboard")
+
+admin_mode = st.checkbox("Parent Login")
+
+if admin_mode:
+    password = st.text_input("Enter Parent Password", type="password")
+
+    if password == ADMIN_PASSWORD:
+
+        st.success("Parent Mode Active")
+
+        if st.button("Reset All Points to 0"):
+            for kid in data["kids"]:
+                data["points"][kid] = 0
+            ref.set(data)
+            st.success("Points reset!")
+
+        if st.button("Reset Today's Completions"):
+            data["completions"] = {}
+            data["daily_completions"][today] = {
+                k: 0 for k in data["kids"]
+            }
+            ref.set(data)
+            st.success("Today's completions reset!")
+
+        if st.button("Reset EVERYTHING"):
+            ref.set({})
+            st.warning("Database cleared. Refresh app.")
+            st.stop()
+
+        selected_kid = st.selectbox("Select Kid", data["kids"])
+        bonus = st.number_input("Points to Add", min_value=1, max_value=100, value=10)
+
+        if st.button("Add Bonus Points"):
+            data["points"][selected_kid] += bonus
+            ref.set(data)
+            st.success(f"Added {bonus} points to {selected_kid}!")
+
+    elif password != "":
+        st.error("Incorrect password")
 
 # ─── Chore Checkboxes ────────────────────────────────────────────────────
 st.markdown("### Today's Chores")
