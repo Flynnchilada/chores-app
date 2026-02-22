@@ -79,17 +79,17 @@ def auto_assign_chores(data):
 
 # ─── Badge Logic ─────────────────────────────────────────────────────────
 BADGE_RULES = [
-    ("First Steps 🥉", lambda d, k: d["total_chores_completed"][k] >= 1),
-    ("Helping Hand 🥈", lambda d, k: d["total_chores_completed"][k] >= 10),
-    ("Chore Champion 🥇", lambda d, k: d["total_chores_completed"][k] >= 25),
-    ("Streak Star 🔥", lambda d, k: d["streaks"][k] >= 5),
-    ("Super Streak 🌟", lambda d, k: d["streaks"][k] >= 10),
+    ("First Steps 🥉", lambda d, k: d.get("total_chores_completed", {}).get(k, 0) >= 1),
+    ("Helping Hand 🥈", lambda d, k: d.get("total_chores_completed", {}).get(k, 0) >= 10),
+    ("Chore Champion 🥇", lambda d, k: d.get("total_chores_completed", {}).get(k, 0) >= 25),
+    ("Streak Star 🔥", lambda d, k: d.get("streaks", {}).get(k, 0) >= 5),
+    ("Super Streak 🌟", lambda d, k: d.get("streaks", {}).get(k, 0) >= 10),
 ]
 
 def check_and_award_badges(data, kid):
     for badge, rule in BADGE_RULES:
-        if rule(data, kid) and badge not in data["badges"][kid]:
-            data["badges"][kid].append(badge)
+        if rule(data, kid) and badge not in data.get("badges", {}).get(kid, []):
+            data.setdefault("badges", {}).setdefault(kid, []).append(badge)
             st.toast(f"{kid} earned badge: {badge}", icon="🏅")
 
 # ─── Chore Toggle Logic ──────────────────────────────────────────────────
@@ -101,25 +101,29 @@ def on_chore_change(kid, chore, key):
     data["completions"][kid][chore] = new_value
 
     if new_value and not old_value:
+        data.setdefault("points", {}).setdefault(kid, 0)
         data["points"][kid] += 10
+        data.setdefault("total_chores_completed", {}).setdefault(kid, 0)
         data["total_chores_completed"][kid] += 1
 
     # Check if all assigned chores done today
-    assigned = data["assignments"].get(kid, [])
+    assigned = data.get("assignments", {}).get(kid, [])
     done_today = all(
-        data["completions"].get(kid, {}).get(c, False) for c in assigned
+        data.get("completions", {}).get(kid, {}).get(c, False) for c in assigned
     )
 
     if done_today:
-        last = data["last_completed_date"].get(kid)
+        last = data.get("last_completed_date", {}).get(kid, "")
         yesterday = (today - timedelta(days=1)).isoformat()
 
         if last == yesterday:
+            data.setdefault("streaks", {}).setdefault(kid, 0)
             data["streaks"][kid] += 1
         elif last != today_key:
+            data.setdefault("streaks", {}).setdefault(kid, 0)
             data["streaks"][kid] = 1
 
-        data["last_completed_date"][kid] = today_key
+        data.setdefault("last_completed_date", {})[kid] = today_key
         check_and_award_badges(data, kid)
 
     ref.set(data)
@@ -135,37 +139,37 @@ with st.expander("Parent Dashboard 🔒", expanded=True):
     admin_input = st.text_input("Enter admin password:", type="password")
     if admin_input == ADMIN_PASSWORD:
         st.markdown("### Family Overview")
-        total_points = sum(data['points'].values())
-        total_chores = sum(data['total_chores_completed'].values())
-        avg_streak = sum(data['streaks'].values()) / len(data['kids'])
+        total_points = sum(data.get('points', {}).values())
+        total_chores = sum(data.get('total_chores_completed', {}).values())
+        avg_streak = (sum(data.get('streaks', {}).values()) / len(data.get('kids', []))) if data.get('kids') else 0
 
         st.markdown(f"**Total Points:** {total_points}")
         st.markdown(f"**Total Chores Completed:** {total_chores}")
         st.markdown(f"**Average Streak:** {avg_streak:.1f}")
 
         st.markdown("#### Individual Stats")
-        for kid in data["kids"]:
-            st.markdown(f"- **{kid}**: {data['points'][kid]} pts, "
-                        f"{data['streaks'][kid]}🔥 streak, "
-                        f"{data['total_chores_completed'][kid]} chores done")
+        for kid in data.get("kids", []):
+            points = data.get("points", {}).get(kid, 0)
+            streak = data.get("streaks", {}).get(kid, 0)
+            chores_done = data.get("total_chores_completed", {}).get(kid, 0)
+            st.markdown(f"- **{kid}**: {points} pts, {streak}🔥 streak, {chores_done} chores done")
     elif admin_input:
         st.error("Incorrect password")
 
 # ─── Leaderboard ─────────────────────────────────────────────────────────
 st.markdown("### 🏆 Leaderboard")
-# Sort kids by points (descending)
-leaderboard = sorted(data["kids"], key=lambda k: data["points"][k], reverse=True)
+leaderboard = sorted(data.get("kids", []), key=lambda k: data.get("points", {}).get(k, 0), reverse=True)
 for rank, kid in enumerate(leaderboard, start=1):
-    badges = " ".join(data["badges"][kid]) if data["badges"][kid] else ""
-    st.markdown(
-        f"**{rank}. {kid}** – ⭐ {data['points'][kid]} pts | 🔥 {data['streaks'][kid]} streak {badges}"
-    )
+    badges = " ".join(data.get("badges", {}).get(kid, []))
+    points = data.get("points", {}).get(kid, 0)
+    streak = data.get("streaks", {}).get(kid, 0)
+    st.markdown(f"**{rank}. {kid}** – ⭐ {points} pts | 🔥 {streak} streak {badges}")
 
 # ─── Chores ──────────────────────────────────────────────────────────────
 st.markdown("### Today's Chores")
-for kid in data["kids"]:
+for kid in data.get("kids", []):
     st.subheader(kid)
-    for chore in data["assignments"][kid]:
+    for chore in data.get("assignments", {}).get(kid, []):
         key = f"{kid}_{chore}"
         st.checkbox(
             chore,
@@ -177,15 +181,18 @@ for kid in data["kids"]:
 
 # ─── Progress & Rewards ──────────────────────────────────────────────────
 st.markdown("### Progress")
-for kid in data["kids"]:
+for kid in data.get("kids", []):
     st.markdown(f"**{kid}**")
-    st.markdown(f"⭐ Points: {data['points'][kid]}")
-    st.markdown(f"🔥 Streak: {data['streaks'][kid]}")
-    st.progress(min(data["points"][kid] / 300, 1.0))
+    points = data.get("points", {}).get(kid, 0)
+    streak = data.get("streaks", {}).get(kid, 0)
+    st.markdown(f"⭐ Points: {points}")
+    st.markdown(f"🔥 Streak: {streak}")
+    st.progress(min(points / 300, 1.0))
 
-    if data["badges"][kid]:
+    badges_list = data.get("badges", {}).get(kid, [])
+    if badges_list:
         st.markdown("🏅 Badges:")
-        for b in data["badges"][kid]:
+        for b in badges_list:
             st.markdown(f"- {b}")
 
     st.markdown("---")
