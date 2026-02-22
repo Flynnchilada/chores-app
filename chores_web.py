@@ -52,7 +52,7 @@ def get_data():
         ref.set(default_data)
         return default_data
     
-    # Ensure all fields exist
+    # Ensure all fields
     for field in ["points", "streaks", "last_completed_days"]:
         if field not in data:
             if field in ["points", "streaks"]:
@@ -131,7 +131,7 @@ def get_reward(points):
         return "Keep going! Next reward at 50 points"
 
 # ─── Admin Password (CHANGE THIS!) ───────────────────────────────────────────────
-ADMIN_PASSWORD = "Harlindon2026"  # ← CHANGE THIS TO SOMETHING ONLY YOU KNOW
+ADMIN_PASSWORD = "Harlindon26"  # ← CHANGE THIS TO SOMETHING ONLY YOU KNOW
 
 # ─── Check if user is admin ──────────────────────────────────────────────────────
 is_admin = False
@@ -172,12 +172,15 @@ if is_admin:
         adjustment = st.number_input("Add/subtract points", value=0, step=10, key="admin_points_adjust")
         
         if st.button("Apply Points Change", key="apply_points_btn"):
-            current_points = data["points"].get(selected_kid, 0)
-            new_points = current_points + adjustment
-            data["points"][selected_kid] = new_points
-            ref.set(data)  # Save immediately
-            st.success(f"{adjustment} points applied → {selected_kid} now has **{new_points}** points")
-            st.rerun()  # Reload UI with fresh data
+            if adjustment != 0:  # avoid zero changes
+                current_points = data["points"].get(selected_kid, 0)
+                new_points = current_points + adjustment
+                data["points"][selected_kid] = new_points
+                ref.set(data)  # Save immediately to Firebase
+                st.success(f"Applied {adjustment} points → {selected_kid} now has **{new_points}** points")
+                st.rerun()  # Reload UI with fresh data
+            else:
+                st.info("No change (adjustment = 0)")
         
         if st.button("Reset All Streaks & Points", key="reset_all_btn"):
             if st.checkbox("Confirm reset (cannot be undone)", key="confirm_reset"):
@@ -185,7 +188,7 @@ if is_admin:
                 data["points"] = {"Ruby": 0, "Sofia": 0}
                 data["last_completed_days"] = {"Ruby": None, "Sofia": None}
                 ref.set(data)
-                st.success("Streaks and points reset")
+                st.success("All streaks and points reset")
                 st.rerun()
 
     # Manage Chores List
