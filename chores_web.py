@@ -3,14 +3,15 @@ import streamlit as st
 import firebase_admin
 from firebase_admin import credentials, db
 import json
-from datetime import date
+from datetime import date, timedelta
 
 # ─── CONFIG ─────────────────────────────────────────────────────────────
-ADMIN_PASSWORD = "parent123"  # CHANGE THIS
+ADMIN_PASSWORD = "parent123"
 SHARED_CHORE = "Clean Rooms"
 
-today = date.today().isoformat()
-today_display = date.today().strftime('%A, %d %B %Y')
+today = date.today()
+today_key = today.isoformat()
+today_display = today.strftime('%A, %d %B %Y')
 
 # ─── Firebase Setup ─────────────────────────────────────────────────────
 try:
@@ -47,31 +48,49 @@ def get_data():
     data.setdefault("completions", {})
     data.setdefault("points", {k: 0 for k in data["kids"]})
 
+    data.setdefault("streaks", {k: 0 for k in data["kids"]})
+    data.setdefault("last_completed_date", {k: "" for k in data["kids"]})
+    data.setdefault("total_chores_completed", {k: 0 for k in data["kids"]})
+    data.setdefault("badges", {k: [] for k in data["kids"]})
+
     auto_assign_chores(data)
 
     ref.set(data)
     return data
 
-# ─── Auto Assignment Logic ───────────────────────────────────────────────
+# ─── Daily Rotation Assignment ───────────────────────────────────────────
 def auto_assign_chores(data):
     kids = data["kids"]
     chores = data["chores"]
 
-    # Remove shared chore from pool
+    epoch = date(2024, 1, 1)
+    rotation_offset = (today - epoch).days % len(kids)
+
     normal_chores = [c for c in chores if c != SHARED_CHORE]
 
-    # Start clean
     data["assignments"] = {k: [] for k in kids}
 
-    # Round-robin split
     for i, chore in enumerate(normal_chores):
-        kid = kids[i % len(kids)]
-        data["assignments"][kid].append(chore)
+        kid_index = (i + rotation_offset) % len(kids)
+        data["assignments"][kids[kid_index]].append(chore)
 
-    # Add shared chore to everyone
     for kid in kids:
-        if SHARED_CHORE not in data["assignments"][kid]:
-            data["assignments"][kid].append(SHARED_CHORE)
+        data["assignments"][kid].append(SHARED_CHORE)
+
+# ─── Badge Logic ─────────────────────────────────────────────────────────
+BADGE_RULES = [
+    ("First Steps 🥉", lambda d, k: d["total_chores_completed"][k] >= 1),
+    ("Helping Hand 🥈", lambda d, k: d["total_chores_completed"][k] >= 10),
+    ("Chore Champion 🥇", lambda d, k: d["total_chores_completed"][k] >= 25),
+    ("Streak Star 🔥", lambda d, k: d["streaks"][k] >= 5),
+    ("Super Streak 🌟", lambda d, k: d["streaks"][k] >= 10),
+]
+
+def check_and_award_badges(data, kid):
+    for badge, rule in BADGE_RULES:
+        if rule(data, kid) and badge not in data["badges"][kid]:
+            data["badges"][kid].append(badge)
+            st.toast(f"{kid} earned badge: {badge}", icon="🏅")
 
 # ─── Chore Toggle Logic ──────────────────────────────────────────────────
 def on_chore_change(kid, chore, key):
@@ -83,7 +102,25 @@ def on_chore_change(kid, chore, key):
 
     if new_value and not old_value:
         data["points"][kid] += 10
-        st.toast(f"+10 points for {kid}", icon="⭐")
+        data["total_chores_completed"][kid] += 1
+
+    # Check if all assigned chores done today
+    assigned = data["assignments"].get(kid, [])
+    done_today = all(
+        data["completions"].get(kid, {}).get(c, False) for c in assigned
+    )
+
+    if done_today:
+        last = data["last_completed_date"].get(kid)
+        yesterday = (today - timedelta(days=1)).isoformat()
+
+        if last == yesterday:
+            data["streaks"][kid] += 1
+        elif last != today_key:
+            data["streaks"][kid] = 1
+
+        data["last_completed_date"][kid] = today_key
+        check_and_award_badges(data, kid)
 
     ref.set(data)
 
@@ -93,60 +130,13 @@ st.subheader(f"Today: {today_display}")
 
 data = get_data()
 
-# ─── Parent Dashboard ────────────────────────────────────────────────────
-st.markdown("---")
-st.markdown("## 🔐 Parent Dashboard")
-
-if st.checkbox("Parent Login"):
-    password = st.text_input("Enter Parent Password", type="password")
-
-    if password == ADMIN_PASSWORD:
-        st.success("Parent Mode Active")
-
-        # Add chore
-        st.markdown("### ➕ Add Chore")
-        new_chore = st.text_input("New chore name")
-
-        if st.button("Add Chore"):
-            new_chore = new_chore.strip()
-            if not new_chore:
-                st.error("Chore cannot be empty")
-            elif new_chore in data["chores"]:
-                st.warning("Chore already exists")
-            else:
-                data["chores"].append(new_chore)
-                auto_assign_chores(data)
-                ref.set(data)
-                st.success(f"Added: {new_chore}")
-                st.experimental_rerun()
-
-        # Delete chore
-        st.markdown("### ❌ Delete Chore")
-        chore_to_delete = st.selectbox("Select chore", data["chores"])
-
-        if st.button("Delete Chore"):
-            data["chores"].remove(chore_to_delete)
-
-            for kid in data["kids"]:
-                data.get("completions", {}).get(kid, {}).pop(chore_to_delete, None)
-
-            auto_assign_chores(data)
-            ref.set(data)
-            st.success(f"Deleted: {chore_to_delete}")
-            st.experimental_rerun()
-
-    elif password:
-        st.error("Incorrect password")
-
-# ─── Chore Display ───────────────────────────────────────────────────────
+# ─── Chores ──────────────────────────────────────────────────────────────
 st.markdown("### Today's Chores")
 
 for kid in data["kids"]:
     st.subheader(kid)
 
-    chores = data["assignments"].get(kid, [])
-
-    for chore in chores:
+    for chore in data["assignments"][kid]:
         key = f"{kid}_{chore}"
         st.checkbox(
             chore,
@@ -156,13 +146,20 @@ for kid in data["kids"]:
             args=(kid, chore, key)
         )
 
-# ─── Progress ────────────────────────────────────────────────────────────
+# ─── Progress & Rewards ──────────────────────────────────────────────────
 st.markdown("### Progress")
 
 for kid in data["kids"]:
-    pts = data["points"][kid]
-    st.markdown(f"**{kid}** – ⭐ {pts} points")
-    st.progress(min(pts / 300, 1.0))
+    st.markdown(f"**{kid}**")
+    st.markdown(f"⭐ Points: {data['points'][kid]}")
+    st.markdown(f"🔥 Streak: {data['streaks'][kid]}")
+    st.progress(min(data["points"][kid] / 300, 1.0))
+
+    if data["badges"][kid]:
+        st.markdown("🏅 Badges:")
+        for b in data["badges"][kid]:
+            st.markdown(f"- {b}")
+
     st.markdown("---")
 
 st.caption("Flynnchilada • Firebase • Streamlit")
