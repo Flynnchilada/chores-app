@@ -52,36 +52,27 @@ def get_data():
         ref.set(default_data)
         return default_data
     
-    # Ensure all fields
+    # Ensure all fields exist
     for field in ["points", "streaks", "last_completed_days"]:
         if field not in data:
-            data[field] = {"Ruby": 0 if field == "points" else 0 if field == "streaks" else None}
+            if field == "points" or field == "streaks":
+                data[field] = {"Ruby": 0, "Sofia": 0}
+            else:
+                data[field] = {"Ruby": None, "Sofia": None}
     
     return data
 
 data = get_data()
 
-# ─── Admin Password (CHANGE THIS!) ───────────────────────────────────────────────
-ADMIN_PASSWORD = "Harlindon2026"  # ← CHANGE THIS TO SOMETHING ONLY YOU KNOW
-
-# ─── Check if user is admin ──────────────────────────────────────────────────────
-is_admin = False
-with st.sidebar:
-    st.markdown("**Parent Admin**")
-    password_input = st.text_input("Enter admin password", type="password", key="admin_pw")
-    if password_input == ADMIN_PASSWORD:
-        is_admin = True
-        st.success("Admin access granted")
-    elif password_input:
-        st.error("Wrong password")
+# ─── Define key variables early so they are always available ─────────────────────
+assignments = data.get("last_assignments", {})
+completions = data.get("completions", {})
 
 # ─── Update Streaks & Points ─────────────────────────────────────────────────────
 def update_streaks_and_points():
     today_str = date.today().isoformat()
     yesterday_str = (date.today() - timedelta(days=1)).isoformat()
 
-    assignments = data.get("last_assignments", {})
-    completions = data.get("completions", {})
     streaks = data.get("streaks", {"Ruby": 0, "Sofia": 0})
     last_completed = data.get("last_completed_days", {"Ruby": None, "Sofia": None})
     points = data.get("points", {"Ruby": 0, "Sofia": 0})
@@ -139,13 +130,26 @@ def get_reward(points):
     else:
         return "Keep going! Next reward at 50 points"
 
+# ─── Admin Password (CHANGE THIS!) ───────────────────────────────────────────────
+ADMIN_PASSWORD = "parent123"  # ← CHANGE THIS TO SOMETHING ONLY YOU KNOW
+
+# ─── Check if user is admin ──────────────────────────────────────────────────────
+is_admin = False
+with st.sidebar:
+    st.markdown("**Parent Admin**")
+    password_input = st.text_input("Enter admin password", type="password", key="admin_pw")
+    if password_input == ADMIN_PASSWORD:
+        is_admin = True
+        st.success("Admin access granted")
+    elif password_input:
+        st.error("Wrong password")
+
 # ─── App UI ──────────────────────────────────────────────────────────────────────
 st.title("Ruby & Sofia Chore Manager")
 
 today = date.today().strftime("%A, %d %B %Y")
 st.subheader(f"Today: {today}")
 
-# ─── Kid View / Admin View ───────────────────────────────────────────────────────
 if is_admin:
     st.markdown("### Admin Dashboard (Parent Only)")
     
@@ -181,7 +185,7 @@ if is_admin:
                 st.success("Streaks and points reset")
                 st.rerun()
 
-    # Admin chore management
+    # Admin chore management (optional)
     st.subheader("Manage Chores List")
     current_chores = data["chores"]
     new_chore = st.text_input("Add new chore")
@@ -230,9 +234,6 @@ else:
 
     st.markdown("### Today's Chores")
 
-    assignments = data.get("last_assignments", {})
-    completions = data.get("completions", {})
-
     updated = False
 
     for kid in sorted(assignments.keys()):
@@ -263,18 +264,22 @@ else:
         st.success("Changes saved and synced!")
         st.rerun()
 
-    # Streaks & Points for kids
-    st.markdown("### Your Progress")
-    for kid in data["kids"]:
-        streak = data["streaks"].get(kid, 0)
-        points = data["points"].get(kid, 0)
-        reward = get_reward(points)
-        st.markdown(f"**{kid}**")
-        st.markdown(f"🔥 Streak: **{streak}** days")
-        st.markdown(f"⭐ Points: **{points}**")
-        st.progress(min(points / 300, 1.0), text=f"Next: {reward}")
+# ─── Streaks & Points Display ────────────────────────────────────────────────────
+st.markdown("### Progress & Rewards")
 
-# ─── Celebration ─────────────────────────────────────────────────────────────────
+for kid in data["kids"]:
+    streak = data["streaks"].get(kid, 0)
+    points = data["points"].get(kid, 0)
+    reward = get_reward(points)
+
+    st.markdown(f"**{kid}**")
+    st.markdown(f"🔥 Streak: **{streak}** day{'s' if streak != 1 else ''}")
+    st.markdown(f"⭐ Points: **{points}**")
+    st.progress(min(points / 300, 1.0), text=f"Next reward: {reward}")
+    st.caption(f"Reward unlocked: {reward}")
+    st.markdown("---")
+
+# ─── Celebration if all done today ───────────────────────────────────────────────
 if assignments:
     total_chores = sum(len(tasks) for tasks in assignments.values())
     done_chores = sum(
@@ -286,24 +291,25 @@ if assignments:
         st.balloons()
         st.markdown(
             """
-            <div style="text-align:center; font-size:2.8em; color:#2ecc71; margin:40px 0;">
+            <div style="text-align: center; font-size: 2.8em; color: #2ecc71; margin: 40px 0;">
             🎉 ALL DONE TODAY! 🎉
             </div>
             """,
             unsafe_allow_html=True
         )
         st.markdown(
-            "<p style='text-align:center; font-size:1.4em; color:#27ae60;'>"
-            "You're legends Ruby & Sofia! 🌟 Keep the streak & points growing!"
+            "<p style='text-align: center; font-size: 1.4em; color: #27ae60;'>"
+            "You're absolute legends Ruby & Sofia! 🌟✨ Keep the streak & points going!"
             "</p>",
             unsafe_allow_html=True
         )
 
+# Manual refresh
 if st.button("Refresh / Sync Now"):
     st.rerun()
 
 if not assignments:
-    st.info("No assignments yet. Generate new ones to start!")
+    st.info("No assignments yet. Click 'Generate New Assignments' to start!")
 
 st.markdown("---")
 st.caption("App by Flynnchilada • Synced via Firebase • Add to iPhone home screen")
