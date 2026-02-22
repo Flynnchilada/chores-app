@@ -46,12 +46,29 @@ def get_data():
     data.setdefault("streaks", {"Ruby": 0, "Sofia": 0})
     data.setdefault("last_completed_days", {"Ruby": None, "Sofia": None})
     data.setdefault("points", {"Ruby": 0, "Sofia": 0})
+    
+    # Default reward tiers (editable in admin)
+    data.setdefault("rewards", [
+        {"points": 50,  "text": "Ice cream treat 🍦"},
+        {"points": 100, "text": "Extra screen time 30 min 🎮"},
+        {"points": 200, "text": "Movie night pick 🍿"},
+        {"points": 300, "text": "Special family outing 🌟"}
+    ])
+    
     ref.set(data)
     return data
 
 data = get_data()
 
-# Early definitions (prevents NameError)
+# ─── Dynamic reward function ─────────────────────────────────────────────────────
+def get_reward(points):
+    rewards = sorted(data.get("rewards", []), key=lambda x: x["points"], reverse=True)
+    for r in rewards:
+        if points >= r["points"]:
+            return r["text"]
+    return "Keep going! Next reward soon"
+
+# Early definitions
 assignments = data.get("last_assignments", {})
 completions = data.get("completions", {})
 
@@ -91,14 +108,6 @@ def update_streaks_and_points():
     ref.set(data)
 
 update_streaks_and_points()
-
-# ─── Reward function ─────────────────────────────────────────────────────────────
-def get_reward(points):
-    if points >= 300: return "Special family outing 🌟"
-    if points >= 200: return "Movie night pick 🍿"
-    if points >= 100: return "Extra screen time 30 min 🎮"
-    if points >= 50:  return "Ice cream treat 🍦"
-    return "Keep going! Next at 50 points"
 
 # ─── Admin check ─────────────────────────────────────────────────────────────────
 is_admin = False
@@ -141,6 +150,37 @@ if is_admin:
                 data["points"][kid] = data["points"].get(kid, 0) + adj
                 ref.set(data)
                 st.success(f"{adj:+} points → {kid} now has **{data['points'][kid]}**")
+                st.rerun()
+
+        st.subheader("Manage Reward Tiers")
+        rewards = data.get("rewards", [])
+        
+        # Display and edit existing tiers
+        for i, r in enumerate(rewards):
+            cols = st.columns([2, 3, 1])
+            new_points = cols[0].number_input(f"Points {i+1}", value=r["points"], step=10, key=f"pts_{i}")
+            new_text = cols[1].text_input(f"Reward {i+1}", value=r["text"], key=f"txt_{i}")
+            if cols[2].button("Delete", key=f"del_r_{i}"):
+                rewards.pop(i)
+                data["rewards"] = rewards
+                ref.set(data)
+                st.rerun()
+            if new_points != r["points"] or new_text != r["text"]:
+                rewards[i] = {"points": new_points, "text": new_text}
+                data["rewards"] = rewards
+                ref.set(data)
+                st.rerun()
+
+        # Add new reward tier
+        st.markdown("Add new tier")
+        new_pts = st.number_input("New points threshold", min_value=0, step=10, key="new_pts")
+        new_txt = st.text_input("New reward text", key="new_txt")
+        if st.button("Add Reward Tier", key="add_reward"):
+            if new_txt.strip():
+                rewards.append({"points": new_pts, "text": new_txt.strip()})
+                data["rewards"] = sorted(rewards, key=lambda x: x["points"], reverse=True)
+                ref.set(data)
+                st.success("Reward tier added!")
                 st.rerun()
 
         if st.button("Reset Everything", key="btn_reset"):
@@ -187,12 +227,10 @@ else:
 
         ass = {kid: [] for kid in data["kids"]}
 
-        # Team chores assigned to BOTH kids
         for chore in team_chores:
             for kid in data["kids"]:
                 ass[kid].append(chore)
 
-        # Individual chores distributed randomly
         for i, chore in enumerate(individual_chores):
             ass[data["kids"][i % len(data["kids"])]].append(chore)
 
@@ -241,8 +279,8 @@ for kid in data["kids"]:
     st.markdown(f"**{kid}**")
     st.markdown(f"🔥 Streak: **{s}** day{'s' if s != 1 else ''}")
     st.markdown(f"⭐ Points: **{p}**")
-    st.progress(min(p / 300, 1.0), text=f"Next reward: {get_reward(p)}")
-    st.caption(f"Reward unlocked: {get_reward(p)}")
+    st.progress(min(p / 300, 1.0), text=f"Next: {get_reward(p)}")
+    st.caption(f"Reward: {get_reward(p)}")
     st.markdown("---")
 
 # ─── Celebration ─────────────────────────────────────────────────────────────────
