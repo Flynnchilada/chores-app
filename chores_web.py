@@ -6,41 +6,34 @@ import json
 from datetime import date
 
 # ─── Firebase Setup ──────────────────────────────────────────────────────────────
-# This block only runs once per browser session
-if 'firebase_initialized' not in st.session_state:
-    st.session_state.firebase_initialized = False
-
-if not st.session_state.firebase_initialized:
+# Only initialize once per browser session
+if 'firebase_app' not in st.session_state:
     try:
-        # Load the service account JSON from Streamlit secrets
-        # You must have this in Settings → Secrets:
-        # [firebase]
-        # service_account_json = '''
-        # { your full JSON here }
-        # '''
+        # Load secret
         service_account_str = st.secrets["firebase"]["service_account_json"]
         service_account_info = json.loads(service_account_str)
 
         cred = credentials.Certificate(service_account_info)
 
-        # Initialize Firebase only once
-        firebase_admin.initialize_app(cred, {
+        # Initialize with a unique name to be extra safe (even though one is enough)
+        app = firebase_admin.initialize_app(cred, {
             'databaseURL': 'https://chores-1a1ac-default-rtdb.asia-southeast1.firebasedatabase.app/'
-        })
+        }, name='chores-app')
 
-        st.session_state.firebase_initialized = True
+        st.session_state.firebase_app = app
 
     except Exception as e:
-        st.error(f"Firebase connection failed: {str(e)}")
-        st.error("Check that the 'firebase' → 'service_account_json' secret is correctly set in app Settings.")
+        st.error("Firebase connection failed")
+        st.error(str(e))
+        st.error("Please verify the 'firebase' → 'service_account_json' secret in app Settings.")
         st.stop()
 
-# Database reference
+# Use the initialized app
 DB_PATH = "/chores/ruby_sofia"
 ref = db.reference(DB_PATH)
 
 # ─── Load or Initialize Data ─────────────────────────────────────────────────────
-@st.cache_data(ttl=30)  # refresh cache every 30 seconds
+@st.cache_data(ttl=30)
 def get_data():
     data = ref.get()
     if data is None:
@@ -126,15 +119,14 @@ if updated:
     st.success("Changes saved and synced!")
     st.rerun()
 
-# Manual refresh button
+# Manual refresh
 if st.button("Refresh / Sync Now"):
     st.rerun()
 
-# Status message
 if not assignments:
     st.info("No assignments yet. Click 'Generate New Assignments' to start!")
 else:
     st.caption("Changes made by anyone will appear after refresh or next interaction.")
 
 st.markdown("---")
-st.caption("App by Flynnchilada • Data synced via Firebase • Add to home screen on iPhone for app-like experience")
+st.caption("App by Flynnchilada • Data synced via Firebase • Add to home screen on iPhone")
