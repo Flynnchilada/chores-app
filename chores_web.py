@@ -3,7 +3,7 @@ import firebase_admin
 from firebase_admin import credentials, db, _apps
 import random
 import json
-from datetime import date
+from datetime import date, timedelta
 
 # ─── Firebase Setup ──────────────────────────────────────────────────────────────
 APP_NAME = 'chores-family-app'
@@ -44,13 +44,68 @@ def get_data():
             ],
             "last_date": None,
             "last_assignments": None,
-            "completions": {}
+            "completions": {},
+            "streaks": {"Ruby": 0, "Sofia": 0},          # new field
+            "last_completed_days": {"Ruby": None, "Sofia": None}  # new field
         }
         ref.set(default_data)
         return default_data
+    # Ensure streaks fields exist (for older data)
+    if "streaks" not in data:
+        data["streaks"] = {"Ruby": 0, "Sofia": 0}
+    if "last_completed_days" not in data:
+        data["last_completed_days"] = {"Ruby": None, "Sofia": None}
     return data
 
 data = get_data()
+
+# ─── Update Streaks Logic ────────────────────────────────────────────────────────
+def update_streaks():
+    today_str = date.today().isoformat()
+    yesterday_str = (date.today() - timedelta(days=1)).isoformat()
+
+    assignments = data.get("last_assignments", {})
+    completions = data.get("completions", {})
+    streaks = data.get("streaks", {"Ruby": 0, "Sofia": 0})
+    last_completed = data.get("last_completed_days", {"Ruby": None, "Sofia": None})
+
+    if not assignments:
+        return  # no assignments today → no streak change
+
+    total_chores = sum(len(tasks) for tasks in assignments.values())
+    done_chores = sum(
+        sum(1 for v in kid_compl.values() if v)
+        for kid_compl in completions.values()
+    )
+
+    all_done_today = total_chores > 0 and done_chores == total_chores
+
+    for kid in data["kids"]:
+        last_day = last_completed.get(kid)
+        current_streak = streaks.get(kid, 0)
+
+        if all_done_today:
+            if last_day == yesterday_str:
+                # Continued streak
+                current_streak += 1
+            else:
+                # New streak starts
+                current_streak = 1
+            last_completed[kid] = today_str
+        else:
+            # Failed to complete today → reset streak
+            current_streak = 0
+            # Do NOT change last_completed (keeps previous success for continuity)
+
+        streaks[kid] = current_streak
+
+    # Save back
+    data["streaks"] = streaks
+    data["last_completed_days"] = last_completed
+    ref.set(data)
+
+# Run streak update every load (safe because it's idempotent for today)
+update_streaks()
 
 # ─── App UI ──────────────────────────────────────────────────────────────────────
 st.title("Ruby & Sofia Chore Manager")
@@ -75,6 +130,8 @@ if st.button("Generate New Assignments", type="primary"):
     data["last_date"] = today
     data["last_assignments"] = assignments
     data["completions"] = completions
+    # Reset today's completion tracking for streaks
+    data["last_completed_days"] = {kid: None for kid in data["kids"]}
 
     ref.set(data)
     st.success("New assignments created and synced!")
@@ -111,11 +168,22 @@ for kid in sorted(assignments.keys()):
 
 if updated:
     ref.set(data)
+    update_streaks()  # re-check streaks after change
     st.success("Changes saved and synced!")
     st.rerun()
 
-# ─── Celebration if all chores are done ──────────────────────────────────────────
-if assignments:  # only check if there are assignments today
+# ─── Show Streaks ────────────────────────────────────────────────────────────────
+st.markdown("### Current Streaks 🔥")
+for kid in data["kids"]:
+    streak = data["streaks"].get(kid, 0)
+    if streak > 0:
+        emoji = "🔥" * min(streak, 5)  # max 5 flames for display
+        st.markdown(f"**{kid}**: {streak} day{'s' if streak > 1 else ''} in a row! {emoji}")
+    else:
+        st.markdown(f"**{kid}**: 0 days — let's start a streak today! 💪")
+
+# Celebration if all done today
+if assignments:
     total_chores = sum(len(tasks) for tasks in assignments.values())
     done_chores = sum(
         sum(1 for v in kid_compl.values() if v)
@@ -123,18 +191,18 @@ if assignments:  # only check if there are assignments today
     )
 
     if total_chores > 0 and done_chores == total_chores:
-        st.balloons()  # confetti explosion!
+        st.balloons()
         st.markdown(
             """
-            <div style="text-align: center; font-size: 2.5em; color: #2ecc71; margin: 30px 0;">
+            <div style="text-align: center; font-size: 2.8em; color: #2ecc71; margin: 40px 0;">
             🎉 ALL DONE TODAY! 🎉
             </div>
             """,
             unsafe_allow_html=True
         )
         st.markdown(
-            "<p style='text-align: center; font-size: 1.3em; color: #27ae60;'>"
-            "Amazing job Ruby & Sofia! You're superstars! 🌟🐶🐱✨"
+            "<p style='text-align: center; font-size: 1.4em; color: #27ae60;'>"
+            "You're absolute legends Ruby & Sofia! 🌟✨ Keep the streak going!"
             "</p>",
             unsafe_allow_html=True
         )
