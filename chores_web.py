@@ -2,63 +2,144 @@ import streamlit as st
 import firebase_admin
 from firebase_admin import credentials, db
 import random
+import json
 from datetime import date
 
-# Firebase setup (use same service account JSON)
-if not firebase_admin._apps:    
-    firebase_admin.initialize_app(cred, {
-        'databaseURL': 'https://chores-1a1ac-default-rtdb.asia-southeast1.firebasedatabase.app/'
-    })
+# ─── Firebase Setup ──────────────────────────────────────────────────────────────
+# This block runs once when the app loads
+if 'firebase_initialized' not in st.session_state:
+    st.session_state.firebase_initialized = False
 
+if not st.session_state.firebase_initialized:
+    try:
+        # Load the full service account JSON from Streamlit secrets
+        # You must have added this in Settings → Secrets:
+        # [firebase]
+        # service_account_json = '''
+        # { ... your full JSON content here ... }
+        # '''
+        service_account_str = st.secrets["firebase"]["service_account_json"]
+        
+        # Parse the string into a Python dictionary
+        service_account_info = json.loads(service_account_str)
+        
+        # Create credentials from the dict (firebase-admin supports this)
+        cred = credentials.Certificate(service_account_info)
+        
+        # Initialize Firebase
+        firebase_admin.initialize_app(cred, {
+            'databaseURL': 'https://chores-1a1ac-default-rtdb.asia-southeast1.firebasedatabase.app/'
+        })
+        
+        st.session_state.firebase_initialized = True
+        st.success("Connected to Firebase successfully")
+        
+    except Exception as e:
+        st.error(f"Firebase connection failed: {str(e)}")
+        st.error("Please check that you have correctly added the 'firebase' → 'service_account_json' secret in app Settings.")
+        st.stop()
+
+# Database reference
 DB_PATH = "/chores/ruby_sofia"
 ref = db.reference(DB_PATH)
 
-# Load or init data
-data = ref.get() or {
-    "kids": ["Ruby", "Sofia"],
-    "chores": ["Feed dog", "Do dog poo", "Feed cat", "Clean kitty litter", "Put away dishes", "Put away clean clothes", "Take out rubbish bins", "Wipe kitchen bench"],
-    "last_date": None,
-    "last_assignments": None,
-    "completions": {}
-}
+# ─── Load or Initialize Data ─────────────────────────────────────────────────────
+@st.cache_data(ttl=10)  # refresh every 10 seconds
+def get_data():
+    data = ref.get()
+    if data is None:
+        default_data = {
+            "kids": ["Ruby", "Sofia"],
+            "chores": [
+                "Feed dog", "Do dog poo",
+                "Feed cat", "Clean kitty litter",
+                "Put away dishes", "Put away clean clothes",
+                "Take out rubbish bins", "Wipe kitchen bench"
+            ],
+            "last_date": None,
+            "last_assignments": None,
+            "completions": {}
+        }
+        ref.set(default_data)
+        return default_data
+    return data
 
+data = get_data()
+
+# ─── App UI ──────────────────────────────────────────────────────────────────────
 st.title("Ruby & Sofia Chore Manager")
 
 today = date.today().strftime("%A, %d %B %Y")
 st.subheader(f"Today: {today}")
 
-if st.button("Generate New Assignments"):
+# Generate new assignments button
+if st.button("Generate New Assignments", type="primary"):
     chores_copy = data["chores"][:]
     random.shuffle(chores_copy)
+    
     assignments = {kid: [] for kid in data["kids"]}
     for i, chore in enumerate(chores_copy):
         kid = data["kids"][i % len(data["kids"])]
         assignments[kid].append(chore)
-    completions = {kid: {chore: False for chore in tasks} for kid, tasks in assignments.items()}
+    
+    completions = {
+        kid: {chore: False for chore in tasks}
+        for kid, tasks in assignments.items()
+    }
+    
     data["last_date"] = today
     data["last_assignments"] = assignments
     data["completions"] = completions
+    
     ref.set(data)
-    st.success("New assignments generated & synced!")
+    st.success("New assignments created and synced!")
+    st.rerun()  # refresh UI
 
-# Display assignments with checkboxes
+# Display current assignments with checkboxes
+st.markdown("### Today's Chores")
+
 assignments = data.get("last_assignments", {})
 completions = data.get("completions", {})
 
-for kid in sorted(assignments):
+updated = False
+
+for kid in sorted(assignments.keys()):
     st.markdown(f"**★ {kid}**")
     tasks = assignments.get(kid, [])
+    
+    if not tasks:
+        st.info("No chores today – nice break!")
+        continue
+    
     for chore in sorted(tasks):
-        key = f"{kid}_{chore}"
-        done = completions.get(kid, {}).get(chore, False)
-        if st.checkbox(chore, value=done, key=key):
-            if not done:
-                data["completions"].setdefault(kid, {})[chore] = True
-                ref.set(data)
-                st.toast(f"Marked: {chore} ✓")
+        key = f"{kid}_{chore.replace(' ', '_')}"  # unique key for checkbox
+        current_done = completions.get(kid, {}).get(chore, False)
+        
+        done = st.checkbox(
+            chore,
+            value=current_done,
+            key=key
+        )
+        
+        # Detect change
+        if done != current_done:
+            data.setdefault("completions", {}).setdefault(kid, {})[chore] = done
+            updated = True
 
+if updated:
+    ref.set(data)
+    st.success("Changes saved and synced!")
+    st.rerun()
+
+# Refresh button (for manual sync if needed)
+if st.button("Refresh / Sync Now"):
+    st.rerun()
+
+# Status / info
 if not assignments:
-    st.info("No assignments yet — generate new ones!")
+    st.info("No assignments yet. Click 'Generate New Assignments' to start!")
+else:
+    st.caption("Changes made by anyone will appear after refresh or next interaction.")
 
-# Auto-refresh for real-time (Streamlit reruns on interaction; use st.experimental_rerun() in thread if needed)
-st.caption("Changes sync live across devices!")
+st.markdown("---")
+st.caption("App by Flynnchilada • Data synced via Firebase • Add to home screen on iPhone for app-like experience")
