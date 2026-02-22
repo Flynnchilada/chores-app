@@ -94,7 +94,7 @@ def get_reward(points):
     return "Keep going! Next at 50 points"
 
 # ─── Admin Password (CHANGE THIS!) ───────────────────────────────────────────────
-ADMIN_PASSWORD = "your_secure_password_here"  # ← CHANGE THIS NOW
+ADMIN_PASSWORD = "parent123"  # ← CHANGE THIS NOW
 
 is_admin = False
 with st.sidebar:
