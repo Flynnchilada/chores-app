@@ -45,22 +45,27 @@ def get_data():
             "last_date": None,
             "last_assignments": None,
             "completions": {},
-            "streaks": {"Ruby": 0, "Sofia": 0},          # new field
-            "last_completed_days": {"Ruby": None, "Sofia": None}  # new field
+            "streaks": {"Ruby": 0, "Sofia": 0},
+            "last_completed_days": {"Ruby": None, "Sofia": None},
+            "points": {"Ruby": 0, "Sofia": 0},  # new: total points per kid
         }
         ref.set(default_data)
         return default_data
-    # Ensure streaks fields exist (for older data)
+    
+    # Ensure all fields exist
+    if "points" not in data:
+        data["points"] = {"Ruby": 0, "Sofia": 0}
     if "streaks" not in data:
         data["streaks"] = {"Ruby": 0, "Sofia": 0}
     if "last_completed_days" not in data:
         data["last_completed_days"] = {"Ruby": None, "Sofia": None}
+    
     return data
 
 data = get_data()
 
-# ─── Update Streaks Logic ────────────────────────────────────────────────────────
-def update_streaks():
+# ─── Update Streaks & Points ─────────────────────────────────────────────────────
+def update_streaks_and_points():
     today_str = date.today().isoformat()
     yesterday_str = (date.today() - timedelta(days=1)).isoformat()
 
@@ -68,9 +73,10 @@ def update_streaks():
     completions = data.get("completions", {})
     streaks = data.get("streaks", {"Ruby": 0, "Sofia": 0})
     last_completed = data.get("last_completed_days", {"Ruby": None, "Sofia": None})
+    points = data.get("points", {"Ruby": 0, "Sofia": 0})
 
     if not assignments:
-        return  # no assignments today → no streak change
+        return
 
     total_chores = sum(len(tasks) for tasks in assignments.values())
     done_chores = sum(
@@ -80,32 +86,53 @@ def update_streaks():
 
     all_done_today = total_chores > 0 and done_chores == total_chores
 
+    # Award points for completed chores
     for kid in data["kids"]:
+        kid_tasks = len(assignments.get(kid, []))
+        kid_done = sum(1 for v in completions.get(kid, {}).values() if v)
+        
+        # +10 points per completed chore
+        points[kid] += kid_done * 10
+
+        # +50 bonus if all family chores done today
+        if all_done_today:
+            points[kid] += 50
+
+        # Streak logic
         last_day = last_completed.get(kid)
         current_streak = streaks.get(kid, 0)
 
         if all_done_today:
             if last_day == yesterday_str:
-                # Continued streak
                 current_streak += 1
             else:
-                # New streak starts
                 current_streak = 1
             last_completed[kid] = today_str
         else:
-            # Failed to complete today → reset streak
             current_streak = 0
-            # Do NOT change last_completed (keeps previous success for continuity)
 
         streaks[kid] = current_streak
 
-    # Save back
+    data["points"] = points
     data["streaks"] = streaks
     data["last_completed_days"] = last_completed
     ref.set(data)
 
-# Run streak update every load (safe because it's idempotent for today)
-update_streaks()
+# Run update on every load / change
+update_streaks_and_points()
+
+# ─── Reward Tiers ────────────────────────────────────────────────────────────────
+def get_reward(points):
+    if points >= 300:
+        return "Special family outing 🌟"
+    elif points >= 200:
+        return "Movie night pick 🍿"
+    elif points >= 100:
+        return "Extra screen time 30 min 🎮"
+    elif points >= 50:
+        return "Ice cream treat 🍦"
+    else:
+        return "Keep going! Next reward at 50 points"
 
 # ─── App UI ──────────────────────────────────────────────────────────────────────
 st.title("Ruby & Sofia Chore Manager")
@@ -130,7 +157,7 @@ if st.button("Generate New Assignments", type="primary"):
     data["last_date"] = today
     data["last_assignments"] = assignments
     data["completions"] = completions
-    # Reset today's completion tracking for streaks
+    # Reset today's completion tracking
     data["last_completed_days"] = {kid: None for kid in data["kids"]}
 
     ref.set(data)
@@ -168,21 +195,26 @@ for kid in sorted(assignments.keys()):
 
 if updated:
     ref.set(data)
-    update_streaks()  # re-check streaks after change
+    update_streaks_and_points()
     st.success("Changes saved and synced!")
     st.rerun()
 
-# ─── Show Streaks ────────────────────────────────────────────────────────────────
-st.markdown("### Current Streaks 🔥")
+# ─── Streaks & Points Display ────────────────────────────────────────────────────
+st.markdown("### Progress & Rewards")
+
 for kid in data["kids"]:
     streak = data["streaks"].get(kid, 0)
-    if streak > 0:
-        emoji = "🔥" * min(streak, 5)  # max 5 flames for display
-        st.markdown(f"**{kid}**: {streak} day{'s' if streak > 1 else ''} in a row! {emoji}")
-    else:
-        st.markdown(f"**{kid}**: 0 days — let's start a streak today! 💪")
+    points = data["points"].get(kid, 0)
+    reward = get_reward(points)
 
-# Celebration if all done today
+    st.markdown(f"**{kid}**")
+    st.markdown(f"🔥 Streak: **{streak}** day{'s' if streak != 1 else ''}")
+    st.markdown(f"⭐ Points: **{points}**")
+    st.progress(min(points / 300, 1.0), text=f"Next reward: {reward}")
+    st.caption(f"Reward unlocked: {reward}")
+    st.markdown("---")
+
+# ─── Celebration if all done today ───────────────────────────────────────────────
 if assignments:
     total_chores = sum(len(tasks) for tasks in assignments.values())
     done_chores = sum(
@@ -202,7 +234,7 @@ if assignments:
         )
         st.markdown(
             "<p style='text-align: center; font-size: 1.4em; color: #27ae60;'>"
-            "You're absolute legends Ruby & Sofia! 🌟✨ Keep the streak going!"
+            "You're absolute legends Ruby & Sofia! 🌟✨ Keep the streak & points going!"
             "</p>",
             unsafe_allow_html=True
         )
