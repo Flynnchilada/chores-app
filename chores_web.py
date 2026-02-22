@@ -231,7 +231,7 @@ for rank, kid in enumerate(leaderboard, start=1):
     streak = data.get("streaks", {}).get(kid, 0)
 
     if rank == 1:
-        st.markdown(f"**{rank}. {kid} 🥇** – ⭐ {points} pts | 🔥 {streak} streak {badges}", unsafe_allow_html=True)
+        st.markdown(f"**{rank}. {kid} 🥇** – ⭐ {points} pts | 🔥 {streak} streak {badges}")
     else:
         st.markdown(f"**{rank}. {kid}** – ⭐ {points} pts | 🔥 {streak} streak {badges}")
 
@@ -244,10 +244,11 @@ for kid in data.get("kids", []):
     for chore in data.get("assignments", {}).get(kid, []):
         key = f"{kid}_{chore}"
 
-        # Highlight weekly rotating chore
-        label = chore
+        # Highlight weekly rotating chore (emoji + uppercase)
         if chore in weekly_chores:
-            label = f"🔄 **{chore} (this week's)**"
+            label = f"🔄 {chore.upper()} (this week's)"
+        else:
+            label = chore
 
         st.checkbox(
             label,
@@ -255,8 +256,7 @@ for kid in data.get("kids", []):
             key=key,
             on_change=on_chore_change,
             args=(kid, chore, key),
-            help="Weekly rotating chore" if chore in weekly_chores else None,
-            unsafe_allow_html=True
+            help="Weekly rotating chore" if chore in weekly_chores else None
         )
 
 # ─── Progress & Rewards ──────────────────────────────────────────────────
