@@ -100,7 +100,6 @@ def on_chore_change(kid, chore, key):
     data.setdefault("completions", {}).setdefault(kid, {})
     data["completions"][kid][chore] = new_value
 
-    # Update points and total chores completed
     data.setdefault("points", {}).setdefault(kid, 0)
     data.setdefault("total_chores_completed", {}).setdefault(kid, 0)
 
@@ -111,13 +110,11 @@ def on_chore_change(kid, chore, key):
         data["points"][kid] = max(data["points"][kid] - 10, 0)
         data["total_chores_completed"][kid] = max(data["total_chores_completed"][kid] - 1, 0)
 
-    # Check if all assigned chores done today
     assigned = data.get("assignments", {}).get(kid, [])
     done_today = all(
         data.get("completions", {}).get(kid, {}).get(c, False) for c in assigned
     )
 
-    # Update streaks and badges only if all chores are done
     if done_today:
         last = data.get("last_completed_date", {}).get(kid, "")
         yesterday = (today - timedelta(days=1)).isoformat()
@@ -225,11 +222,16 @@ with st.expander("Parent Dashboard 🔒", expanded=True):
 # ─── Leaderboard ─────────────────────────────────────────────────────────
 st.markdown("### 🏆 Leaderboard")
 leaderboard = sorted(data.get("kids", []), key=lambda k: data.get("points", {}).get(k, 0), reverse=True)
+
 for rank, kid in enumerate(leaderboard, start=1):
     badges = " ".join(data.get("badges", {}).get(kid, []))
     points = data.get("points", {}).get(kid, 0)
     streak = data.get("streaks", {}).get(kid, 0)
-    st.markdown(f"**{rank}. {kid}** – ⭐ {points} pts | 🔥 {streak} streak {badges}")
+
+    if rank == 1:
+        st.markdown(f"**{rank}. {kid} 🥇** – ⭐ {points} pts | 🔥 {streak} streak {badges}", unsafe_allow_html=True)
+    else:
+        st.markdown(f"**{rank}. {kid}** – ⭐ {points} pts | 🔥 {streak} streak {badges}")
 
 # ─── Chores ──────────────────────────────────────────────────────────────
 st.markdown("### Today's Chores")
