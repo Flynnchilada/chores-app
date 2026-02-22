@@ -1,4 +1,4 @@
-# ─── IMPORTS (MUST BE FIRST) ─────────────────────────────────────────────
+# ─── IMPORTS ─────────────────────────────────────────────────────────────
 import streamlit as st
 import firebase_admin
 from firebase_admin import credentials, db
@@ -33,28 +33,20 @@ def get_data():
 
     data.setdefault("kids", ["Ruby", "Sofia"])
     data.setdefault("chores", [
-        "Feed dog", "Do dog poo", "Feed cat", "Clean kitty litter",
-        "Put away dishes", "Put away clean clothes",
+        "Feed dog", "Feed cat", "Clean kitty litter",
+        "Put away dishes", "Put away clothes",
         "Take out rubbish bins", "Wipe kitchen bench"
     ])
+    data.setdefault("assignments", {k: [] for k in data["kids"]})
     data.setdefault("completions", {})
-    data.setdefault("points", {"Ruby": 0, "Sofia": 0})
-    data.setdefault("daily_completions", {})
-    data.setdefault("badges", {"Ruby": [], "Sofia": []})
+    data.setdefault("points", {k: 0 for k in data["kids"]})
 
     ref.set(data)
     return data
 
 data = get_data()
 
-# ─── Helpers ────────────────────────────────────────────────────────────
-def get_level(points):
-    if points >= 300: return "Level 4 – Superstar 🌟"
-    if points >= 200: return "Level 3 – Champion 🏆"
-    if points >= 100: return "Level 2 – Rising Hero 🚀"
-    return "Level 1 – Starter 🌱"
-
-# ─── Chore Checkbox Logic ────────────────────────────────────────────────
+# ─── Chore Toggle Logic ──────────────────────────────────────────────────
 def on_chore_change(kid, chore, key):
     new_value = st.session_state.get(key, False)
     old_value = data.get("completions", {}).get(kid, {}).get(chore, False)
@@ -82,7 +74,7 @@ if st.checkbox("Parent Login"):
     if password == ADMIN_PASSWORD:
         st.success("Parent Mode Active")
 
-        # ─── Add Chore ───────────────────────────────────────────────────
+        # ─── Add Chore ────────────────────────────────────────────────
         st.markdown("### ➕ Add Chore")
         new_chore = st.text_input("New chore name")
 
@@ -97,39 +89,57 @@ if st.checkbox("Parent Login"):
                 ref.set(data)
                 st.success(f"Added: {new_chore}")
 
-        # ─── Delete Chore ────────────────────────────────────────────────
+        # ─── Delete Chore ─────────────────────────────────────────────
         st.markdown("### ❌ Delete Chore")
+        chore_to_delete = st.selectbox("Select chore", data["chores"])
 
-        if data["chores"]:
-            chore_to_delete = st.selectbox(
-                "Select chore to delete",
-                data["chores"]
-            )
+        if st.button("Delete Chore"):
+            data["chores"].remove(chore_to_delete)
 
-            if st.button("Delete Chore"):
-                # Remove from chore list
-                data["chores"].remove(chore_to_delete)
+            for kid in data["kids"]:
+                data["assignments"][kid].remove(chore_to_delete) \
+                    if chore_to_delete in data["assignments"][kid] else None
+                data.get("completions", {}).get(kid, {}).pop(chore_to_delete, None)
 
-                # Remove from all completions
-                for kid in data["kids"]:
-                    if kid in data.get("completions", {}):
-                        data["completions"][kid].pop(chore_to_delete, None)
+            ref.set(data)
+            st.success(f"Deleted: {chore_to_delete}")
+            st.experimental_rerun()
 
+        # ─── Assign Chores ────────────────────────────────────────────
+        st.markdown("### 👧 Assign Chores Per Child")
+
+        selected_kid = st.selectbox("Select Child", data["kids"])
+        selected_chore = st.selectbox("Select Chore", data["chores"])
+
+        if st.button("Assign Chore"):
+            if selected_chore not in data["assignments"][selected_kid]:
+                data["assignments"][selected_kid].append(selected_chore)
                 ref.set(data)
-                st.success(f"Deleted chore: {chore_to_delete}")
-                st.experimental_rerun()
-        else:
-            st.info("No chores to delete")
+                st.success(f"Assigned {selected_chore} to {selected_kid}")
+
+        if st.button("Unassign Chore"):
+            if selected_chore in data["assignments"][selected_kid]:
+                data["assignments"][selected_kid].remove(selected_chore)
+                data.get("completions", {}).get(selected_kid, {}).pop(selected_chore, None)
+                ref.set(data)
+                st.success(f"Unassigned {selected_chore} from {selected_kid}")
 
     elif password:
         st.error("Incorrect password")
 
-# ─── Chore List ──────────────────────────────────────────────────────────
+# ─── Chore Display ───────────────────────────────────────────────────────
 st.markdown("### Today's Chores")
 
 for kid in data["kids"]:
     st.subheader(kid)
-    for chore in data["chores"]:
+
+    chores = data["assignments"].get(kid, [])
+
+    if not chores:
+        st.info("No chores assigned today")
+        continue
+
+    for chore in chores:
         key = f"{kid}_{chore}"
         st.checkbox(
             chore,
@@ -143,9 +153,9 @@ for kid in data["kids"]:
 st.markdown("### Progress")
 
 for kid in data["kids"]:
-    pts = data["points"].get(kid, 0)
-    st.markdown(f"**{kid}** · {get_level(pts)}")
-    st.progress(min(pts / 400, 1.0))
+    pts = data["points"][kid]
+    st.markdown(f"**{kid}** – ⭐ {pts} points")
+    st.progress(min(pts / 300, 1.0))
     st.markdown("---")
 
 st.caption("Flynnchilada • Firebase • Streamlit")
