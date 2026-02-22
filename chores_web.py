@@ -106,7 +106,6 @@ def on_chore_change(kid, chore, key):
         data.setdefault("total_chores_completed", {}).setdefault(kid, 0)
         data["total_chores_completed"][kid] += 1
 
-    # Check if all assigned chores done today
     assigned = data.get("assignments", {}).get(kid, [])
     done_today = all(
         data.get("completions", {}).get(kid, {}).get(c, False) for c in assigned
@@ -134,7 +133,7 @@ st.subheader(f"Today: {today_display}")
 
 data = get_data()
 
-# ─── Parent Dashboard ────────────────────────────────────────────────────
+# ─── Parent Dashboard / Admin Panel ──────────────────────────────────────
 with st.expander("Parent Dashboard 🔒", expanded=True):
     admin_input = st.text_input("Enter admin password:", type="password")
     if admin_input == ADMIN_PASSWORD:
@@ -152,7 +151,54 @@ with st.expander("Parent Dashboard 🔒", expanded=True):
             points = data.get("points", {}).get(kid, 0)
             streak = data.get("streaks", {}).get(kid, 0)
             chores_done = data.get("total_chores_completed", {}).get(kid, 0)
-            st.markdown(f"- **{kid}**: {points} pts, {streak}🔥 streak, {chores_done} chores done")
+            badges_list = data.get("badges", {}).get(kid, [])
+            badges_str = " ".join(badges_list)
+            st.markdown(f"- **{kid}**: {points} pts, {streak}🔥 streak, {chores_done} chores done {badges_str}")
+
+        st.markdown("---")
+        st.markdown("### Manage Chores")
+        # Add Chore
+        new_chore = st.text_input("Add new chore:")
+        if st.button("Add Chore"):
+            if new_chore and new_chore not in data.get("chores", []):
+                data.setdefault("chores", []).append(new_chore)
+                auto_assign_chores(data)
+                ref.set(data)
+                st.success(f"Added chore: {new_chore}")
+
+        # Remove Chore
+        remove_chore = st.selectbox("Remove chore:", options=data.get("chores", []))
+        if st.button("Remove Chore"):
+            if remove_chore in data.get("chores", []):
+                data["chores"].remove(remove_chore)
+                auto_assign_chores(data)
+                for kid in data.get("completions", {}):
+                    data["completions"][kid].pop(remove_chore, None)
+                ref.set(data)
+                st.success(f"Removed chore: {remove_chore}")
+
+        st.markdown("---")
+        st.markdown("### Manage Streaks & Points")
+        selected_kid = st.selectbox("Select Kid:", options=data.get("kids", []))
+
+        # Reset Streaks
+        if st.button("Reset Streaks"):
+            for kid in data.get("kids", []):
+                data.setdefault("streaks", {}).setdefault(kid, 0)
+                data["streaks"][kid] = 0
+            ref.set(data)
+            st.success("All streaks reset!")
+
+        # Add / Remove Points
+        points_change = st.number_input("Points to Add / Remove:", value=0)
+        if st.button("Update Points"):
+            data.setdefault("points", {}).setdefault(selected_kid, 0)
+            data["points"][selected_kid] += points_change
+            if data["points"][selected_kid] < 0:
+                data["points"][selected_kid] = 0
+            ref.set(data)
+            st.success(f"{selected_kid} now has {data['points'][selected_kid]} points")
+
     elif admin_input:
         st.error("Incorrect password")
 
