@@ -258,12 +258,9 @@ else:
             cur = completions.get(kid, {}).get(chore, False)
 
             def on_chore_change():
-                # Read the current checkbox value from session state
                 new_value = st.session_state.get(key, False)
-
                 old_value = completions.get(kid, {}).get(chore, False)
 
-                # Update completion status in data
                 data["completions"].setdefault(kid, {})[chore] = new_value
 
                 # Award points ONLY when changing from False → True
@@ -276,7 +273,7 @@ else:
                 # Always save and update streaks/bonus
                 ref.set(data)
                 update_streaks_and_points()
-                st.rerun()
+                # No st.rerun() here — Streamlit auto-reruns after widget change
 
             st.checkbox(
                 chore,
