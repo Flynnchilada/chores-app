@@ -35,14 +35,8 @@ def get_data():
 
     data.setdefault("kids", ["Ruby", "Sofia"])
     data.setdefault("chores", [
-        "Clean Rooms",
-        "Feed dog",
-        "Feed cat",
-        "Clean kitty litter",
-        "Put away dishes",
-        "Put away clothes",
-        "Take out rubbish bins",
-        "Wipe kitchen bench"
+        "Feed Dog", "Dog Poo", "Feed Cat", "Clean Kitty Litter",
+        "Take out rubbish", "Put away Dishes", "Clean Rooms"
     ])
     data.setdefault("assignments", {})
     data.setdefault("completions", {})
@@ -58,24 +52,32 @@ def get_data():
     ref.set(data)
     return data
 
-# ─── Daily Rotation Assignment ───────────────────────────────────────────
+# ─── Weekly + Daily Chore Assignment ─────────────────────────────────────
 def auto_assign_chores(data):
     kids = data["kids"]
-    chores = data["chores"]
-
-    epoch = date(2024, 1, 1)
-    rotation_offset = (today - epoch).days % len(kids)
-
-    normal_chores = [c for c in chores if c != SHARED_CHORE]
-
     data["assignments"] = {k: [] for k in kids}
 
-    for i, chore in enumerate(normal_chores):
-        kid_index = (i + rotation_offset) % len(kids)
-        data["assignments"][kids[kid_index]].append(chore)
+    # Fixed chores per kid
+    fixed_chores = {
+        "Ruby": ["Feed Dog", "Dog Poo"],
+        "Sofia": ["Feed Cat", "Clean Kitty Litter"]
+    }
 
+    # Assign fixed chores
+    for kid in kids:
+        data["assignments"][kid].extend(fixed_chores.get(kid, []))
+
+    # Shared daily chore
     for kid in kids:
         data["assignments"][kid].append(SHARED_CHORE)
+
+    # Weekly rotating chores
+    weekly_chores = ["Take out rubbish", "Put away Dishes"]
+    week_number = today.isocalendar()[1]
+
+    for i, chore in enumerate(weekly_chores):
+        kid_index = (week_number + i) % len(kids)
+        data["assignments"][kids[kid_index]].append(chore)
 
 # ─── Badge Logic ─────────────────────────────────────────────────────────
 BADGE_RULES = [
