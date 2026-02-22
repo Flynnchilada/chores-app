@@ -6,7 +6,7 @@ import json
 from datetime import date, timedelta
 
 # ─── CONFIG ─────────────────────────────────────────────────────────────────────
-TEAM_CHORES = ["Clean Rooms", "Tidy Playroom", "Family Clean-up", "Garden Watering"]  # ← Add more team chores here
+TEAM_CHORES = ["Clean Rooms", "Tidy Playroom", "Family Clean-up", "Garden Watering"]  # Add more team chores here
 
 ADMIN_PASSWORD = "parent123"  # ← CHANGE THIS TO SOMETHING ONLY YOU KNOW!
 
@@ -86,10 +86,9 @@ def update_streaks_and_points():
     all_done = total_chores > 0 and done_chores == total_chores
 
     for kid in data["kids"]:
-        kid_done = sum(1 for v in completions.get(kid, {}).values() if v)
-        points[kid] += kid_done * 10
+        # Individual chore points are now handled per checkbox — not here
         if all_done:
-            points[kid] += 50
+            points[kid] += 50  # family completion bonus
 
         last_day = last_completed.get(kid)
         streak = streaks.get(kid, 0)
@@ -155,7 +154,6 @@ if is_admin:
         st.subheader("Manage Reward Tiers")
         rewards = data.get("rewards", [])
         
-        # Display and edit existing tiers
         for i, r in enumerate(rewards):
             cols = st.columns([2, 3, 1])
             new_points = cols[0].number_input(f"Points {i+1}", value=r["points"], step=10, key=f"pts_{i}")
@@ -171,7 +169,6 @@ if is_admin:
                 ref.set(data)
                 st.rerun()
 
-        # Add new reward tier
         st.markdown("Add new tier")
         new_pts = st.number_input("New points threshold", min_value=0, step=10, key="new_pts")
         new_txt = st.text_input("New reward text", key="new_txt")
@@ -217,7 +214,7 @@ if is_admin:
             st.rerun()
 
 else:
-    # Kid view
+    # ─── Kid view ────────────────────────────────────────────────────────────────
     if st.button("Generate New Assignments", type="primary"):
         ch = data["chores"][:]
         random.shuffle(ch)
@@ -248,7 +245,6 @@ else:
 
     st.markdown("### Today's Chores")
 
-    updated = False
     for kid in sorted(assignments.keys()):
         st.markdown(f"**★ {kid}**")
         tasks = assignments.get(kid, [])
@@ -260,16 +256,34 @@ else:
         for chore in sorted(tasks):
             key = f"{kid}_{chore.replace(' ', '_').replace("'", '')}"
             cur = completions.get(kid, {}).get(chore, False)
-            done = st.checkbox(chore, value=cur, key=key)
-            if done != cur:
-                data.setdefault("completions", {}).setdefault(kid, {})[chore] = done
-                updated = True
 
-    if updated:
-        ref.set(data)
-        update_streaks_and_points()
-        st.success("Changes saved and synced!")
+            def on_chore_change(new_value, k=kid, c=chore):
+                old_value = completions.get(k, {}).get(c, False)
+                data["completions"].setdefault(k, {})[c] = new_value
+
+                # Only award points when changing from False → True
+                if new_value and not old_value:
+                    current_points = data["points"].get(k, 0)
+                    data["points"][k] = current_points + 10
+                    ref.set(data)
+                    st.toast(f"+10 points for {k} completing '{c}'!", icon="⭐")
+
+                ref.set(data)
+                update_streaks_and_points()
+                st.rerun()
+
+            st.checkbox(
+                chore,
+                value=cur,
+                key=key,
+                on_change=on_chore_change
+            )
+
+    if st.button("Refresh / Sync Now"):
         st.rerun()
+
+    if not assignments:
+        st.info("No assignments yet. Click 'Generate New Assignments' to start!")
 
 # ─── Progress & Rewards ──────────────────────────────────────────────────────────
 st.markdown("### Progress & Rewards")
@@ -299,12 +313,6 @@ if assignments:
             "</p>",
             unsafe_allow_html=True
         )
-
-if st.button("Refresh / Sync Now"):
-    st.rerun()
-
-if not assignments:
-    st.info("No assignments yet. Click 'Generate New Assignments' to start!")
 
 st.markdown("---")
 st.caption("App by Flynnchilada • Synced via Firebase • Add to iPhone home screen")
