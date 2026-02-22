@@ -1,34 +1,31 @@
 import streamlit as st
 import firebase_admin
-from firebase_admin import credentials, db
+from firebase_admin import credentials, db, _apps
 import random
 import json
 from datetime import date
 
 # ─── Firebase Setup ──────────────────────────────────────────────────────────────
-# Only initialize once per browser session
-if 'firebase_app' not in st.session_state:
+APP_NAME = 'chores-family-app'
+
+if APP_NAME not in _apps:
     try:
-        # Load secret
         service_account_str = st.secrets["firebase"]["service_account_json"]
         service_account_info = json.loads(service_account_str)
 
         cred = credentials.Certificate(service_account_info)
 
-        # Initialize with a unique name to be extra safe (even though one is enough)
-        app = firebase_admin.initialize_app(cred, {
+        firebase_admin.initialize_app(cred, {
             'databaseURL': 'https://chores-1a1ac-default-rtdb.asia-southeast1.firebasedatabase.app/'
-        }, name='chores-app')
-
-        st.session_state.firebase_app = app
+        }, name=APP_NAME)
 
     except Exception as e:
         st.error("Firebase connection failed")
         st.error(str(e))
-        st.error("Please verify the 'firebase' → 'service_account_json' secret in app Settings.")
+        st.error("Verify the 'firebase' → 'service_account_json' secret in app Settings.")
         st.stop()
 
-# Use the initialized app
+# Database reference
 DB_PATH = "/chores/ruby_sofia"
 ref = db.reference(DB_PATH)
 
@@ -61,7 +58,6 @@ st.title("Ruby & Sofia Chore Manager")
 today = date.today().strftime("%A, %d %B %Y")
 st.subheader(f"Today: {today}")
 
-# Generate new assignments
 if st.button("Generate New Assignments", type="primary"):
     chores_copy = data["chores"][:]
     random.shuffle(chores_copy)
@@ -84,7 +80,6 @@ if st.button("Generate New Assignments", type="primary"):
     st.success("New assignments created and synced!")
     st.rerun()
 
-# Display chores
 st.markdown("### Today's Chores")
 
 assignments = data.get("last_assignments", {})
@@ -119,14 +114,13 @@ if updated:
     st.success("Changes saved and synced!")
     st.rerun()
 
-# Manual refresh
 if st.button("Refresh / Sync Now"):
     st.rerun()
 
 if not assignments:
     st.info("No assignments yet. Click 'Generate New Assignments' to start!")
 else:
-    st.caption("Changes made by anyone will appear after refresh or next interaction.")
+    st.caption("Changes appear after refresh or interaction.")
 
 st.markdown("---")
-st.caption("App by Flynnchilada • Data synced via Firebase • Add to home screen on iPhone")
+st.caption("App by Flynnchilada • Synced via Firebase • Add to iPhone home screen")
