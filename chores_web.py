@@ -237,16 +237,26 @@ for rank, kid in enumerate(leaderboard, start=1):
 
 # ─── Chores ──────────────────────────────────────────────────────────────
 st.markdown("### Today's Chores")
+weekly_chores = ["Take out rubbish", "Put away Dishes"]
+
 for kid in data.get("kids", []):
     st.subheader(kid)
     for chore in data.get("assignments", {}).get(kid, []):
         key = f"{kid}_{chore}"
+
+        # Highlight weekly rotating chore
+        label = chore
+        if chore in weekly_chores:
+            label = f"🔄 **{chore} (this week's)**"
+
         st.checkbox(
-            chore,
+            label,
             value=data.get("completions", {}).get(kid, {}).get(chore, False),
             key=key,
             on_change=on_chore_change,
-            args=(kid, chore, key)
+            args=(kid, chore, key),
+            help="Weekly rotating chore" if chore in weekly_chores else None,
+            unsafe_allow_html=True
         )
 
 # ─── Progress & Rewards ──────────────────────────────────────────────────
