@@ -160,7 +160,7 @@ if is_admin:
             cols = st.columns([2, 3, 1])
             new_points = cols[0].number_input(f"Points {i+1}", value=r["points"], step=10, key=f"pts_{i}")
             new_text = cols[1].text_input(f"Reward {i+1}", value=r["text"], key=f"txt_{i}")
-            if cols[2].button("Delete", key=f"del_r_{i}"):
+            if cols[2].button("X", key=f"del_r_{i}"):
                 rewards.pop(i)
                 data["rewards"] = rewards
                 ref.set(data)
@@ -210,7 +210,7 @@ if is_admin:
     for c in chores:
         cols = st.columns([5, 1])
         cols[0].write(c)
-        if cols[1].button("Remove", key=f"del_{c}"):
+        if cols[1].button("X", key=f"del_{c}"):
             chores.remove(c)
             data["chores"] = chores
             ref.set(data)
